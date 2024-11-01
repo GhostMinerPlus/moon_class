@@ -49,6 +49,26 @@ pub trait AsClassManager: Send + Sync {
             } else {
                 let left_item_v = self.call(class.left_op.as_ref().unwrap()).await?;
                 let right_item_v = self.call(class.right_op.as_ref().unwrap()).await?;
+
+                if left_item_v.len() == 1 {
+                    // Let these be faster.
+                    match class.name.as_str() {
+                        "append" => {
+                            self.append(&Class::from_str(&left_item_v[0]), right_item_v)
+                                .await?;
+
+                            return Ok(vec![String::new()]);
+                        }
+                        "minus" => {
+                            self.minus(&Class::from_str(&left_item_v[0]), right_item_v)
+                                .await?;
+
+                            return Ok(vec![String::new()]);
+                        }
+                        _ => (),
+                    }
+                }
+
                 let mut rs = vec![];
 
                 for left_item in &left_item_v {
@@ -167,16 +187,22 @@ pub trait AsClassManager: Send + Sync {
                 "append" => {
                     let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
 
-                    self.append(&left_class, class.right_op.as_ref().unwrap().name.clone())
-                        .await?;
+                    self.append(
+                        &left_class,
+                        vec![class.right_op.as_ref().unwrap().name.clone()],
+                    )
+                    .await?;
 
                     Ok(vec![String::new()])
                 }
                 "minus" => {
                     let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
 
-                    self.minus(&left_class, &class.right_op.as_ref().unwrap().name)
-                        .await?;
+                    self.minus(
+                        &left_class,
+                        vec![class.right_op.as_ref().unwrap().name.clone()],
+                    )
+                    .await?;
 
                     Ok(vec![String::new()])
                 }
@@ -204,7 +230,7 @@ pub trait AsClassManager: Send + Sync {
     fn append<'a, 'a1, 'f>(
         &'a mut self,
         class: &'a1 Class,
-        item: String,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -213,7 +239,7 @@ pub trait AsClassManager: Send + Sync {
     fn minus<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 Class,
-        item: &'a2 str,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -252,7 +278,7 @@ impl AsClassManager for ClassManager {
     fn append<'a, 'a1, 'f>(
         &'a mut self,
         class: &'a1 Class,
-        item: String,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -261,12 +287,12 @@ impl AsClassManager for ClassManager {
         Box::pin(async move {
             match self.class_mp.get_mut(class) {
                 Some(set) => {
-                    set.insert(item);
+                    set.extend(item_v);
                 }
                 None => {
                     let mut set = HashSet::new();
 
-                    set.insert(item);
+                    set.extend(item_v);
 
                     self.class_mp.insert(class.clone(), set);
                 }
@@ -279,7 +305,7 @@ impl AsClassManager for ClassManager {
     fn minus<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 Class,
-        item: &'a2 str,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -288,7 +314,9 @@ impl AsClassManager for ClassManager {
     {
         Box::pin(async move {
             if let Some(set) = self.class_mp.get_mut(class) {
-                set.remove(item);
+                for item in &item_v {
+                    set.remove(item);
+                }
             }
 
             Ok(())
@@ -364,7 +392,7 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
     fn append<'a, 'a1, 'f>(
         &'a mut self,
         class: &'a1 Class,
-        item: String,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -372,9 +400,9 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
     {
         Box::pin(async move {
             if class.name.starts_with('$') {
-                self.temp_cm.append(class, item).await
+                self.temp_cm.append(class, item_v).await
             } else {
-                self.global_cm.append(class, item).await
+                self.global_cm.append(class, item_v).await
             }
         })
     }
@@ -382,7 +410,7 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
     fn minus<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 Class,
-        item: &'a2 str,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -391,9 +419,9 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
     {
         Box::pin(async move {
             if class.name.starts_with('$') {
-                self.temp_cm.minus(class, item).await
+                self.temp_cm.minus(class, item_v).await
             } else {
-                self.global_cm.minus(class, item).await
+                self.global_cm.minus(class, item_v).await
             }
         })
     }
@@ -433,7 +461,7 @@ mod tests {
 
             let rs = ClassExecutor::new(&mut cm)
                 .call(&Class::from_str(
-                    "right<append<'test\\<test\\, test\\>', +<1, 1>>, test<test, test>>",
+                    "right<append<'test<test, test>', +<1, 1>>, test<test, test>>",
                 ))
                 .await
                 .unwrap();

@@ -82,22 +82,14 @@ mod class {
             .replace("\\", "\\\\")
             .replace("\n", "\\n")
             .replace("\t", "\\t")
-            .replace("\'", "\\'")
-            .replace("<", "\\<")
-            .replace(">", "\\>")
-            .replace(",", "\\,");
+            .replace("\'", "\\'");
 
-        if content.len() > word.len() {
-            format!(
-                "'{}'",
-                word.replace("\\", "\\\\")
-                    .replace("\n", "\\n")
-                    .replace("\t", "\\t")
-                    .replace("\'", "\\'")
-                    .replace("<", "\\<")
-                    .replace(">", "\\>")
-                    .replace(",", "\\,")
-            )
+        if content.len() > word.len()
+            || content.contains(',')
+            || content.contains('<')
+            || content.contains('>')
+        {
+            format!("'{content}'")
         } else {
             word.to_string()
         }
