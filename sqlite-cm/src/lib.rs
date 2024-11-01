@@ -117,34 +117,6 @@ impl AsClassManager for SqliteClassManager {
             Ok(())
         })
     }
-
-    fn minus<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 Class,
-        item_v: Vec<String>,
-    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            for item in &item_v {
-                sqlx::query(&format!(
-                    "DELETE FROM class_t WHERE item_name=? and class_name=? and class_left=? and class_right=?"
-                ))
-                .bind(item)
-                .bind(&class.name)
-                .bind(&class.left_op.as_ref().unwrap().name)
-                .bind(&class.right_op.as_ref().unwrap().name)
-                .execute(&self.pool)
-                .await
-                .change_context(moon_class::err::Error::RuntimeError)?;
-            }
-
-            Ok(())
-        })
-    }
 }
 
 #[cfg(test)]

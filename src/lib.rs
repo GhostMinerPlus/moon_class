@@ -50,23 +50,12 @@ pub trait AsClassManager: Send + Sync {
                 let left_item_v = self.call(class.left_op.as_ref().unwrap()).await?;
                 let right_item_v = self.call(class.right_op.as_ref().unwrap()).await?;
 
-                if left_item_v.len() == 1 {
-                    // Let these be faster.
-                    match class.name.as_str() {
-                        "append" => {
-                            self.append(&Class::from_str(&left_item_v[0]), right_item_v)
-                                .await?;
+                // Let 'append' be faster.
+                if left_item_v.len() == 1 && class.name == "append" {
+                    self.append(&Class::from_str(&left_item_v[0]), right_item_v)
+                        .await?;
 
-                            return Ok(vec![String::new()]);
-                        }
-                        "minus" => {
-                            self.minus(&Class::from_str(&left_item_v[0]), right_item_v)
-                                .await?;
-
-                            return Ok(vec![String::new()]);
-                        }
-                        _ => (),
-                    }
+                    return Ok(vec![String::new()]);
                 }
 
                 let mut rs = vec![];
@@ -195,17 +184,6 @@ pub trait AsClassManager: Send + Sync {
 
                     Ok(vec![String::new()])
                 }
-                "minus" => {
-                    let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
-
-                    self.minus(
-                        &left_class,
-                        vec![class.right_op.as_ref().unwrap().name.clone()],
-                    )
-                    .await?;
-
-                    Ok(vec![String::new()])
-                }
                 _ => self.get(class).await,
             }
         })
@@ -235,20 +213,10 @@ pub trait AsClassManager: Send + Sync {
     where
         'a: 'f,
         'a1: 'f;
-
-    fn minus<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 Class,
-        item_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f;
 }
 
 pub struct ClassManager {
-    class_mp: HashMap<Class, HashSet<String>>,
+    class_mp: HashMap<Class, Vec<String>>,
 }
 
 impl ClassManager {
@@ -290,32 +258,11 @@ impl AsClassManager for ClassManager {
                     set.extend(item_v);
                 }
                 None => {
-                    let mut set = HashSet::new();
+                    let mut set = Vec::new();
 
                     set.extend(item_v);
 
                     self.class_mp.insert(class.clone(), set);
-                }
-            }
-
-            Ok(())
-        })
-    }
-
-    fn minus<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 Class,
-        item_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            if let Some(set) = self.class_mp.get_mut(class) {
-                for item in &item_v {
-                    set.remove(item);
                 }
             }
 
@@ -403,25 +350,6 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                 self.temp_cm.append(class, item_v).await
             } else {
                 self.global_cm.append(class, item_v).await
-            }
-        })
-    }
-
-    fn minus<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 Class,
-        item_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            if class.name.starts_with('$') {
-                self.temp_cm.minus(class, item_v).await
-            } else {
-                self.global_cm.minus(class, item_v).await
             }
         })
     }
