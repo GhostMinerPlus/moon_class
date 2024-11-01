@@ -1,0 +1,18 @@
+[workspace]
+members = [".", "sqlite-cm"]
+
+[package]
+name = "moon_class"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "0.4"
+tokio = { version = "1.35", features = ["sync", "time"] }
+error-stack = "0.5"
+
+[dev-dependencies]
+env_logger = "0.11"
+tokio = { version = "1.35", features = ["full"] }

@@ -1,0 +1,15 @@
+[package]
+name = "sqlite-cm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+error-stack = "0.5"
+
+moon_class = { path = ".." }
+
+[dev-dependencies]
+tokio = { version = "1.40", features = ["full"] }
+env_logger = "0.11"
