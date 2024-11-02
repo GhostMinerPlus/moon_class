@@ -40,7 +40,7 @@ pub trait AsClassManager: Send + Sync {
         'a1: 'f,
     {
         Box::pin(async move {
-            log::debug!("{}", class.to_string());
+            log::debug!("call {}", class.to_string());
 
             if class.is_tag() {
                 return Ok(vec![class.name.clone()]);
@@ -52,7 +52,8 @@ pub trait AsClassManager: Send + Sync {
 
                 // Let 'append' be faster.
                 if left_item_v.len() == 1 && class.name == "append" {
-                    self.append(&Class::from_str(&left_item_v[0]), right_item_v)
+                    let left_class = Class::from_str(&left_item_v[0]);
+                    self.append(&left_class.name, &left_class.pair()?, right_item_v)
                         .await?;
 
                     return Ok(vec![String::new()]);
@@ -87,21 +88,35 @@ pub trait AsClassManager: Send + Sync {
     {
         Box::pin(async move {
             match class.name.as_str() {
-                "+" => Ok(vec![(class
-                    .left_op
-                    .as_ref()
-                    .unwrap()
-                    .name
-                    .parse::<f64>()
-                    .change_context(err::Error::RuntimeError)?
-                    + class
-                        .right_op
+                "+" => {
+                    let res = class
+                        .left_op
                         .as_ref()
                         .unwrap()
                         .name
                         .parse::<f64>()
-                        .change_context(err::Error::RuntimeError)?)
-                .to_string()]),
+                        .change_context(err::Error::RuntimeError)
+                        .map_err(|e| {
+                            e.attach_printable(format!(
+                                "{} not a number!",
+                                class.left_op.as_ref().unwrap().name
+                            ))
+                        })?
+                        + class
+                            .right_op
+                            .as_ref()
+                            .unwrap()
+                            .name
+                            .parse::<f64>()
+                            .change_context(err::Error::RuntimeError)
+                            .map_err(|e| {
+                                e.attach_printable(format!(
+                                    "{} not a number!",
+                                    class.right_op.as_ref().unwrap().name
+                                ))
+                            })?;
+                    Ok(vec![res.to_string()])
+                }
                 "-" => Ok(vec![(class
                     .left_op
                     .as_ref()
@@ -147,6 +162,7 @@ pub trait AsClassManager: Send + Sync {
                         .parse::<f64>()
                         .change_context(err::Error::RuntimeError)?)
                 .to_string()]),
+                "new" => Ok(vec![uuid::Uuid::new_v4().to_string()]),
                 "none" => Ok(vec![]),
                 "unwrap_or" => {
                     if !class.left_op.as_ref().unwrap().name.is_empty() {
@@ -156,11 +172,14 @@ pub trait AsClassManager: Send + Sync {
                     }
                 }
                 "right" => Ok(vec![class.right_op.as_ref().unwrap().name.clone()]),
-                "pair" => Ok(vec![format!(
-                    "{}, {}",
-                    class.left_op.as_ref().unwrap().name.clone(),
-                    class.right_op.as_ref().unwrap().name.clone()
-                )]),
+                "pair" => Ok(vec![class.pair()?]),
+                "pair_of" => {
+                    self.pair_of(
+                        &class.left_op.as_ref().unwrap().name,
+                        &class.right_op.as_ref().unwrap().name,
+                    )
+                    .await
+                }
                 "type" => Ok(vec![format!(
                     "{}<{}>",
                     class.left_op.as_ref().unwrap().name.clone(),
@@ -169,7 +188,7 @@ pub trait AsClassManager: Send + Sync {
                 "clear" => {
                     let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
 
-                    self.clear(&left_class).await?;
+                    self.clear(&left_class.name, &left_class.pair()?).await?;
 
                     Ok(vec![String::new()])
                 }
@@ -177,92 +196,105 @@ pub trait AsClassManager: Send + Sync {
                     let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
 
                     self.append(
-                        &left_class,
+                        &left_class.name,
+                        &left_class.pair()?,
                         vec![class.right_op.as_ref().unwrap().name.clone()],
                     )
                     .await?;
 
                     Ok(vec![String::new()])
                 }
-                _ => self.get(class).await,
+                _ => self.get(&class.name, &class.pair()?).await,
             }
         })
     }
 
-    fn clear<'a, 'a1, 'f>(
+    fn clear<'a, 'a1, 'a2, 'f>(
         &'a mut self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
-        'a1: 'f;
+        'a1: 'f,
+        'a2: 'f;
 
-    fn get<'a, 'a1, 'f>(
+    fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
-        'a1: 'f;
+        'a1: 'f,
+        'a2: 'f;
 
-    fn append<'a, 'a1, 'f>(
+    fn append<'a, 'a1, 'a2, 'f>(
         &'a mut self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
-        'a1: 'f;
+        'a1: 'f,
+        'a2: 'f;
+
+    fn pair_of<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        item: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f;
+}
+
+pub struct ItemClass {
+    item: String,
+    pair: String,
 }
 
 pub struct ClassManager {
-    class_mp: HashMap<Class, Vec<String>>,
+    unique_id: u64,
+    class_mp: HashMap<u64, ItemClass>,
+    class_pair_inx: HashMap<(String, String), HashSet<u64>>,
+    item_class_inx: HashMap<(String, String), HashSet<u64>>,
 }
 
 impl ClassManager {
     pub fn new() -> Self {
         Self {
+            unique_id: 0,
             class_mp: HashMap::new(),
+            class_pair_inx: HashMap::new(),
+            item_class_inx: HashMap::new(),
         }
     }
 }
 
 impl AsClassManager for ClassManager {
-    fn clear<'a, 'a1, 'f>(
+    fn clear<'a, 'a1, 'a2, 'f>(
         &'a mut self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        'a2: 'f,
     {
         Box::pin(async move {
-            self.class_mp.remove(class);
-
-            Ok(())
-        })
-    }
-
-    fn append<'a, 'a1, 'f>(
-        &'a mut self,
-        class: &'a1 Class,
-        item_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-    {
-        Box::pin(async move {
-            match self.class_mp.get_mut(class) {
-                Some(set) => {
-                    set.extend(item_v);
-                }
-                None => {
-                    let mut set = Vec::new();
-
-                    set.extend(item_v);
-
-                    self.class_mp.insert(class.clone(), set);
+            if let Some(set) = self
+                .class_pair_inx
+                .remove(&(class.to_string(), pair.to_string()))
+            {
+                for id in set {
+                    if let Some(item_class) = self.class_mp.remove(&id) {
+                        self.item_class_inx
+                            .remove(&(item_class.item, class.to_string()));
+                    }
                 }
             }
 
@@ -270,17 +302,103 @@ impl AsClassManager for ClassManager {
         })
     }
 
-    fn get<'a, 'a1, 'f>(
+    fn append<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        class: &'a1 str,
+        pair: &'a2 str,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let mut id = self.unique_id;
+
+            self.unique_id += item_v.len() as u64;
+
+            for item in &item_v {
+                self.class_mp.insert(
+                    id,
+                    ItemClass {
+                        item: item.clone(),
+                        pair: pair.to_string(),
+                    },
+                );
+
+                let class_pair_k = (class.to_string(), pair.to_string());
+
+                if let Some(set) = self.class_pair_inx.get_mut(&class_pair_k) {
+                    set.insert(id);
+                } else {
+                    let mut set = HashSet::new();
+
+                    set.insert(id);
+
+                    self.class_pair_inx.insert(class_pair_k, set);
+                }
+
+                let item_class_k = (item.clone(), class.to_string());
+
+                if let Some(set) = self.item_class_inx.get_mut(&item_class_k) {
+                    set.insert(id);
+                } else {
+                    let mut set = HashSet::new();
+
+                    set.insert(id);
+
+                    self.item_class_inx.insert(item_class_k, set);
+                }
+
+                id += 1;
+            }
+
+            Ok(())
+        })
+    }
+
+    fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        'a2: 'f,
     {
         Box::pin(async move {
-            match self.class_mp.get(class) {
-                Some(set) => Ok(set.iter().map(|item| item.clone()).collect()),
+            let class_pair_k = (class.to_string(), pair.to_string());
+
+            match self.class_pair_inx.get(&class_pair_k) {
+                Some(set) => Ok(set
+                    .iter()
+                    .map(|id| self.class_mp.get(id).unwrap().item.clone())
+                    .collect()),
+                None => Ok(vec![]),
+            }
+        })
+    }
+
+    fn pair_of<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        item: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let item_class_k = (item.to_string(), class.to_string());
+
+            match self.item_class_inx.get(&item_class_k) {
+                Some(set) => Ok(set
+                    .iter()
+                    .map(|id| self.class_mp.get(id).unwrap().pair.clone())
+                    .collect()),
                 None => Ok(vec![]),
             }
         })
@@ -302,67 +420,81 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
 }
 
 impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
-    fn clear<'a, 'a1, 'f>(
+    fn clear<'a, 'a1, 'a2, 'f>(
         &'a mut self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        'a2: 'f,
     {
         Box::pin(async move {
-            if class.name.starts_with('$') {
-                self.temp_cm.clear(class).await
+            if class.starts_with('$') {
+                self.temp_cm.clear(class, pair).await
             } else {
-                self.global_cm.clear(class).await
+                self.global_cm.clear(class, pair).await
             }
         })
     }
 
-    fn get<'a, 'a1, 'f>(
+    fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        'a2: 'f,
     {
         Box::pin(async move {
-            if class.name.starts_with('$') {
-                self.temp_cm.get(class).await
+            if class.starts_with('$') {
+                self.temp_cm.get(class, pair).await
             } else {
-                self.global_cm.get(class).await
+                self.global_cm.get(class, pair).await
             }
         })
     }
 
-    fn append<'a, 'a1, 'f>(
+    fn append<'a, 'a1, 'a2, 'f>(
         &'a mut self,
-        class: &'a1 Class,
+        class: &'a1 str,
+        pair: &'a2 str,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        'a2: 'f,
     {
         Box::pin(async move {
-            if class.name.starts_with('$') {
-                self.temp_cm.append(class, item_v).await
+            if class.starts_with('$') {
+                self.temp_cm.append(class, pair, item_v).await
             } else {
-                self.global_cm.append(class, item_v).await
+                self.global_cm.append(class, pair, item_v).await
             }
         })
     }
 
-    fn call<'a, 'a1, 'f>(
+    fn pair_of<'a, 'a1, 'a2, 'f>(
         &'a mut self,
-        class: &'a1 Class,
+        item: &'a1 str,
+        class: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        'a2: 'f,
     {
-        self.global_cm.call(class)
+        Box::pin(async move {
+            if class.starts_with('$') {
+                self.temp_cm.pair_of(item, class).await
+            } else {
+                self.global_cm.pair_of(item, class).await
+            }
+        })
     }
 }
 
@@ -418,12 +550,47 @@ mod tests {
 
             let rs = ClassExecutor::new(&mut cm)
                 .call(&Class::from_str(
-                    "right<append<type<test, pair<test, test>>, none<, >, +<1, 1>>, test<test, test>>",
+                    "right<
+                        append<'test<test, test>', +<1, 1>>,
+                        none<, >,
+                        test<test, test>
+                    >",
                 ))
                 .await
                 .unwrap();
 
             assert_eq!(rs.len(), 0);
+        })
+    }
+
+    #[test]
+    fn test_new() {
+        let _ =
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+                .is_test(true)
+                .try_init();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            log::debug!("start");
+
+            let mut cm = ClassManager::new();
+
+            let rs = ClassExecutor::new(&mut cm)
+                .call(&Class::from_str(
+                    "right<
+                        append<'test<test, test>', new<, >>,
+                        test<test, test>
+                    >",
+                ))
+                .await
+                .unwrap();
+
+            assert_eq!(rs.len(), 1);
         })
     }
 }

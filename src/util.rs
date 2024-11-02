@@ -1,3 +1,7 @@
+use error_stack::ResultExt;
+
+use crate::err;
+
 mod class {
     use super::Class;
 
@@ -76,54 +80,54 @@ mod class {
 
         Some(pos)
     }
+}
 
-    pub fn unescape_word(word: &str) -> String {
-        let content = word
-            .replace("\\", "\\\\")
-            .replace("\n", "\\n")
-            .replace("\t", "\\t")
-            .replace("\'", "\\'");
+pub fn unescape_word(word: &str) -> String {
+    let content = word
+        .replace("\\", "\\\\")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("\'", "\\'");
 
-        if content.len() > word.len()
-            || content.contains(',')
-            || content.contains('<')
-            || content.contains('>')
-        {
-            format!("'{content}'")
-        } else {
-            word.to_string()
-        }
+    if content.len() > word.len()
+        || content.contains(',')
+        || content.contains('<')
+        || content.contains('>')
+    {
+        format!("'{content}'")
+    } else {
+        word.to_string()
+    }
+}
+
+pub fn escape_word(mut word: &str) -> String {
+    if !word.starts_with('\'') {
+        return word.to_string();
     }
 
-    pub fn escape_word(mut word: &str) -> String {
-        if !word.starts_with('\'') {
-            return word.to_string();
-        }
+    word = &word[1..word.len() - 1];
 
-        word = &word[1..word.len() - 1];
-
-        let mut rs = String::new();
-        let mut pos = 0;
-        while pos < word.len() {
-            pos += match word[pos..].find('\\') {
-                Some(offset) => {
-                    let ch = &word[pos + offset + 1..pos + offset + 2];
-                    let ch = match ch {
-                        "n" => "\n",
-                        "t" => "\t",
-                        _ => ch,
-                    };
-                    rs = format!("{rs}{}{ch}", &word[pos..pos + offset]);
-                    offset + 2
-                }
-                None => {
-                    rs = format!("{rs}{}", &word[pos..]);
-                    break;
-                }
-            };
-        }
-        rs
+    let mut rs = String::new();
+    let mut pos = 0;
+    while pos < word.len() {
+        pos += match word[pos..].find('\\') {
+            Some(offset) => {
+                let ch = &word[pos + offset + 1..pos + offset + 2];
+                let ch = match ch {
+                    "n" => "\n",
+                    "t" => "\t",
+                    _ => ch,
+                };
+                rs = format!("{rs}{}{ch}", &word[pos..pos + offset]);
+                offset + 2
+            }
+            None => {
+                rs = format!("{rs}{}", &word[pos..]);
+                break;
+            }
+        };
     }
+    rs
 }
 
 pub fn rs_2_str(rs: &[String]) -> String {
@@ -192,7 +196,7 @@ pub struct Class {
 impl Class {
     pub fn new(name: &str, left_op: Option<Box<Class>>, right_op: Option<Box<Class>>) -> Box<Self> {
         Box::new(Self {
-            name: class::escape_word(&name),
+            name: escape_word(&name),
             left_op,
             right_op,
         })
@@ -200,10 +204,33 @@ impl Class {
 
     pub fn new_with_name(name: &str) -> Box<Self> {
         Box::new(Self {
-            name: class::escape_word(&name),
+            name: escape_word(&name),
             left_op: None,
             right_op: None,
         })
+    }
+
+    pub fn pair(&self) -> err::Result<String> {
+        let left = self
+            .left_op
+            .as_ref()
+            .ok_or(err::Error::NotFound)
+            .attach_printable("no left!")?;
+        let right = self
+            .left_op
+            .as_ref()
+            .ok_or(err::Error::NotFound)
+            .attach_printable("no right!")?;
+
+        if !left.is_tag() || !right.is_tag() {
+            return Err(err::Error::RuntimeError).attach_printable("not a final class");
+        }
+
+        Ok(format!(
+            "{}, {}",
+            unescape_word(&left.name),
+            unescape_word(&right.name)
+        ))
     }
 
     pub fn is_final_or_tag(&self) -> bool {
@@ -217,7 +244,7 @@ impl Class {
 
     pub fn to_string(&self) -> String {
         if self.is_tag() {
-            return class::unescape_word(&self.name);
+            return unescape_word(&self.name);
         }
 
         format!(
@@ -237,7 +264,7 @@ impl Class {
     pub fn from_str(s: &str) -> Box<Class> {
         if s.starts_with('\'') {
             return Box::new(Self {
-                name: class::escape_word(s),
+                name: escape_word(s),
                 left_op: None,
                 right_op: None,
             });
