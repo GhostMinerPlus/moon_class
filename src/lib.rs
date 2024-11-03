@@ -22,14 +22,6 @@ pub trait Fu: Future + Send {}
 #[cfg(not(target_family = "wasm"))]
 impl<T: Future + Send> Fu for T {}
 
-pub type Auth = Option<PermissionPair>;
-
-#[derive(Clone)]
-pub struct PermissionPair {
-    pub writer: HashSet<String>,
-    pub reader: HashSet<String>,
-}
-
 pub trait AsClassManager: Send + Sync {
     fn call<'a, 'a1, 'f>(
         &'a mut self,
@@ -96,11 +88,8 @@ pub trait AsClassManager: Send + Sync {
                         .name
                         .parse::<f64>()
                         .change_context(err::Error::RuntimeError)
-                        .map_err(|e| {
-                            e.attach_printable(format!(
-                                "{} not a number!",
-                                class.left_op.as_ref().unwrap().name
-                            ))
+                        .attach_printable_lazy(|| {
+                            format!("{} not a number!", class.left_op.as_ref().unwrap().name)
                         })?
                         + class
                             .right_op
@@ -109,11 +98,8 @@ pub trait AsClassManager: Send + Sync {
                             .name
                             .parse::<f64>()
                             .change_context(err::Error::RuntimeError)
-                            .map_err(|e| {
-                                e.attach_printable(format!(
-                                    "{} not a number!",
-                                    class.right_op.as_ref().unwrap().name
-                                ))
+                            .attach_printable_lazy(|| {
+                                format!("{} not a number!", class.right_op.as_ref().unwrap().name)
                             })?;
                     Ok(vec![res.to_string()])
                 }
@@ -123,14 +109,20 @@ pub trait AsClassManager: Send + Sync {
                     .unwrap()
                     .name
                     .parse::<f64>()
-                    .change_context(err::Error::RuntimeError)?
+                    .change_context(err::Error::RuntimeError)
+                    .attach_printable_lazy(|| {
+                        format!("{} not a number!", class.left_op.as_ref().unwrap().name)
+                    })?
                     - class
                         .right_op
                         .as_ref()
                         .unwrap()
                         .name
                         .parse::<f64>()
-                        .change_context(err::Error::RuntimeError)?)
+                        .change_context(err::Error::RuntimeError)
+                        .attach_printable_lazy(|| {
+                            format!("{} not a number!", class.right_op.as_ref().unwrap().name)
+                        })?)
                 .to_string()]),
                 "*" => Ok(vec![(class
                     .left_op
@@ -138,14 +130,20 @@ pub trait AsClassManager: Send + Sync {
                     .unwrap()
                     .name
                     .parse::<f64>()
-                    .change_context(err::Error::RuntimeError)?
+                    .change_context(err::Error::RuntimeError)
+                    .attach_printable_lazy(|| {
+                        format!("{} not a number!", class.left_op.as_ref().unwrap().name)
+                    })?
                     - class
                         .right_op
                         .as_ref()
                         .unwrap()
                         .name
                         .parse::<f64>()
-                        .change_context(err::Error::RuntimeError)?)
+                        .change_context(err::Error::RuntimeError)
+                        .attach_printable_lazy(|| {
+                            format!("{} not a number!", class.right_op.as_ref().unwrap().name)
+                        })?)
                 .to_string()]),
                 "/" => Ok(vec![(class
                     .left_op
@@ -153,14 +151,20 @@ pub trait AsClassManager: Send + Sync {
                     .unwrap()
                     .name
                     .parse::<f64>()
-                    .change_context(err::Error::RuntimeError)?
+                    .change_context(err::Error::RuntimeError)
+                    .attach_printable_lazy(|| {
+                        format!("{} not a number!", class.left_op.as_ref().unwrap().name)
+                    })?
                     - class
                         .right_op
                         .as_ref()
                         .unwrap()
                         .name
                         .parse::<f64>()
-                        .change_context(err::Error::RuntimeError)?)
+                        .change_context(err::Error::RuntimeError)
+                        .attach_printable_lazy(|| {
+                            format!("{} not a number!", class.right_op.as_ref().unwrap().name)
+                        })?)
                 .to_string()]),
                 "new" => Ok(vec![uuid::Uuid::new_v4().to_string()]),
                 "none" => Ok(vec![]),
