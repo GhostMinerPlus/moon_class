@@ -24,7 +24,7 @@ impl<T: Future + Send> Fu for T {}
 pub trait AsClassManager: Send + Sync {
     fn execute<'a, 'a1, 'f>(
         &'a mut self,
-        inc_v: &'a1 Vec<Inc>,
+        inc_v: &'a1 [Inc],
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
