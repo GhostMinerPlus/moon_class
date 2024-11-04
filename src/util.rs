@@ -1,52 +1,10 @@
+use std::fmt::Display;
+
 use error_stack::ResultExt;
 
 use crate::err;
 
-mod class {
-    use super::Class;
-
-    pub fn parse_class_v(s: &str) -> Vec<Box<Class>> {
-        let mut depth = 0;
-        let mut start = 0;
-        let mut content_v = vec![];
-        let mut pos = 0;
-
-        while pos < s.len() {
-            if s[pos..].starts_with('<') {
-                depth += 1;
-            } else if s[pos..].starts_with('>') {
-                depth -= 1;
-            } else if s[pos..].starts_with(',') && depth == 0 {
-                content_v.push(Class::from_str(s[start..pos].trim()));
-                start = pos + 1;
-            } else if s[pos..].starts_with('\'') {
-                pos += 1;
-
-                loop {
-                    if s[pos..].starts_with('\'') {
-                        break;
-                    } else if s[pos..].starts_with('\\') {
-                        pos += 2;
-                    } else {
-                        pos += 1;
-                    }
-
-                    if pos >= s.len() {
-                        panic!("unclosed string!");
-                    }
-                }
-            }
-
-            pos += 1;
-        }
-
-        content_v.push(Class::from_str(s[start..].trim()));
-
-        content_v
-    }
-}
-
-pub fn find_pat_ignoring_string(pat: &str, s: &str) -> Option<usize> {
+pub fn find_pat_ignoring_string(pat: &str, s: &str) -> err::Result<Option<usize>> {
     let mut pos = 0;
 
     loop {
@@ -67,7 +25,8 @@ pub fn find_pat_ignoring_string(pat: &str, s: &str) -> Option<usize> {
                 }
 
                 if pos >= s.len() {
-                    panic!("unclosed string!");
+                    return Err(err::Error::SyntaxError)
+                        .attach_printable_lazy(|| format!("{s}: expected '\'', but not found!"));
                 }
             }
         } else {
@@ -75,14 +34,14 @@ pub fn find_pat_ignoring_string(pat: &str, s: &str) -> Option<usize> {
         }
 
         if pos >= s.len() {
-            return None;
+            return Ok(None);
         }
     }
 
-    Some(pos)
+    Ok(Some(pos))
 }
 
-pub fn unescape_word(word: &str) -> String {
+pub fn str_of_value(word: &str) -> String {
     let content = word
         .replace("\\", "\\\\")
         .replace("\n", "\\n")
@@ -90,9 +49,12 @@ pub fn unescape_word(word: &str) -> String {
         .replace("\'", "\\'");
 
     if content.len() > word.len()
-        || content.contains(',')
-        || content.contains('<')
-        || content.contains('>')
+        || content.contains('[')
+        || content.contains(']')
+        || content.contains('=')
+        || content.contains(';')
+        || content.contains('?')
+        || content.contains(' ')
     {
         format!("'{content}'")
     } else {
@@ -100,7 +62,7 @@ pub fn unescape_word(word: &str) -> String {
     }
 }
 
-pub fn escape_word(mut word: &str) -> String {
+pub fn value_of_str(mut word: &str) -> String {
     if !word.starts_with('\'') {
         return word.to_string();
     }
@@ -186,124 +148,157 @@ pub fn str_2_rs(s: &str) -> Vec<String> {
     rs
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-pub struct Class {
-    pub name: String,
-    pub left_op: Option<Box<Class>>,
-    pub right_op: Option<Box<Class>>,
+pub enum IncVal {
+    Value(String),
+    Addr((Box<IncVal>, Box<IncVal>)),
 }
 
-impl Class {
-    pub fn new(name: &str, left_op: Option<Box<Class>>, right_op: Option<Box<Class>>) -> Box<Self> {
-        Box::new(Self {
-            name: escape_word(&name),
-            left_op,
-            right_op,
-        })
-    }
-
-    pub fn new_with_name(name: &str) -> Box<Self> {
-        Box::new(Self {
-            name: escape_word(&name),
-            left_op: None,
-            right_op: None,
-        })
-    }
-
-    pub fn pair(&self) -> err::Result<String> {
-        let left = self
-            .left_op
-            .as_ref()
-            .ok_or(err::Error::NotFound)
-            .attach_printable("no left!")?;
-        let right = self
-            .left_op
-            .as_ref()
-            .ok_or(err::Error::NotFound)
-            .attach_printable("no right!")?;
-
-        if !left.is_tag() || !right.is_tag() {
-            return Err(err::Error::RuntimeError).attach_printable("not a final class");
+impl IncVal {
+    /// new('view(main)')(new('view(main)'))
+    pub fn from_str(s: &str) -> err::Result<Self> {
+        if s.is_empty() {
+            return Ok(IncVal::Value(String::new()));
         }
 
-        Ok(format!(
-            "{}, {}",
-            unescape_word(&left.name),
-            unescape_word(&right.name)
-        ))
-    }
+        let mut pos = s.len() - 1;
+        let mut depth = 0;
 
-    pub fn is_final_or_tag(&self) -> bool {
-        (self.left_op.is_none() || self.left_op.as_ref().unwrap().is_tag())
-            && (self.right_op.is_none() || self.right_op.as_ref().unwrap().is_tag())
-    }
+        loop {
+            if s[pos..].starts_with(']') {
+                depth += 1;
+            } else if s[pos..].starts_with('[') {
+                depth -= 1;
 
-    pub fn is_tag(&self) -> bool {
-        self.left_op.is_none() && self.right_op.is_none()
-    }
+                if depth == 0 {
+                    let class = IncVal::from_str(s[0..pos].trim())?;
+                    let source = IncVal::from_str(s[pos + 1..s.len() - 1].trim())?;
 
-    pub fn to_string(&self) -> String {
-        if self.is_tag() {
-            return unescape_word(&self.name);
-        }
+                    return Ok(Self::Addr((Box::new(class), Box::new(source))));
+                }
+            } else if s[pos..].starts_with('\'') && (pos == 0 || !s[pos - 1..].starts_with('\\')) {
+                pos -= 1;
 
-        format!(
-            "{}<{}, {}>",
-            self.name,
-            match &self.left_op {
-                Some(item) => item.to_string(),
-                None => String::new(),
-            },
-            match &self.right_op {
-                Some(item) => item.to_string(),
-                None => String::new(),
-            }
-        )
-    }
+                loop {
+                    if s[pos..].starts_with('\'') && (pos == 0 || !s[pos - 1..].starts_with('\\')) {
+                        break;
+                    }
 
-    pub fn from_str(s: &str) -> Box<Class> {
-        if s.starts_with('\'') {
-            return Box::new(Self {
-                name: escape_word(s),
-                left_op: None,
-                right_op: None,
-            });
-        }
+                    if pos == 0 {
+                        return Err(err::Error::SyntaxError).attach_printable_lazy(|| {
+                            format!("{s}: expected '\'', but not found!")
+                        });
+                    }
 
-        if let Some(pos) = find_pat_ignoring_string("<", s) {
-            let mut content_v = class::parse_class_v(&s[pos + 1..s.len() - 1]);
-
-            let mut origin = Box::new(Self {
-                name: s[0..pos].to_string(),
-                left_op: if !content_v.is_empty() {
-                    Some(content_v.remove(0))
-                } else {
-                    None
-                },
-                right_op: if !content_v.is_empty() {
-                    Some(content_v.remove(0))
-                } else {
-                    None
-                },
-            });
-
-            for item in content_v {
-                origin = Box::new(Self {
-                    name: origin.name.clone(),
-                    left_op: Some(origin),
-                    right_op: Some(item),
-                })
+                    pos -= 1;
+                }
             }
 
-            origin
+            if pos == 0 {
+                break;
+            }
+
+            pos -= 1;
+        }
+
+        if s == "?" {
+            Ok(IncVal::Value(uuid::Uuid::new_v4().to_string()))
         } else {
-            Box::new(Self {
-                name: s.to_string(),
-                left_op: None,
-                right_op: None,
-            })
+            Ok(IncVal::Value(value_of_str(s)))
         }
     }
+
+    pub fn as_value(&self) -> Option<&String> {
+        match self {
+            IncVal::Value(v) => Some(v),
+            IncVal::Addr(_) => None,
+        }
+    }
+
+    pub fn as_addr(&self) -> Option<(&IncVal, &IncVal)> {
+        match self {
+            IncVal::Value(_) => None,
+            IncVal::Addr((class, source)) => Some((class, source)),
+        }
+    }
+}
+
+impl Display for IncVal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IncVal::Value(v) => write!(f, "{}", str_of_value(v)),
+            IncVal::Addr((class, source)) => write!(f, "{class}[{source}]"),
+        }
+    }
+}
+
+pub struct Inc {
+    class: IncVal,
+    source: IncVal,
+    target: IncVal,
+}
+
+impl Inc {
+    pub fn class(&self) -> &IncVal {
+        &self.class
+    }
+
+    pub fn source(&self) -> &IncVal {
+        &self.source
+    }
+
+    pub fn target(&self) -> &IncVal {
+        &self.target
+    }
+
+    /// new('view(main)'), ?
+    pub fn from_str(s: &str) -> err::Result<Self> {
+        let pos = find_pat_ignoring_string("=", s)?
+            .ok_or(err::Error::NotFound)
+            .attach_printable("expected '=', but not found!")?;
+
+        let (class, source) = match IncVal::from_str(s[0..pos].trim())? {
+            IncVal::Value(_) => {
+                return Err(err::Error::SyntaxError).attach_printable("need a source");
+            }
+            IncVal::Addr((class, source)) => (*class, *source),
+        };
+
+        let target = IncVal::from_str(s[pos + 1..].trim())?;
+
+        Ok(Self {
+            class,
+            source,
+            target,
+        })
+    }
+}
+
+impl Display for Inc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}[{}] = {}", self.class, self.source, self.target)
+    }
+}
+
+pub fn inc_v_from_str(mut s: &str) -> err::Result<Vec<Inc>> {
+    let mut inc_v = vec![];
+
+    while let Some(pos) = find_pat_ignoring_string(";", s)? {
+        inc_v.push(Inc::from_str(s[0..pos].trim())?);
+
+        s = &s[pos + 1..];
+    }
+
+    Ok(inc_v)
+}
+
+pub fn inc_v_to_string(inc_v: &[Inc]) -> String {
+    let mut s = String::new();
+
+    for inc in inc_v {
+        s = format!("{s}{inc};\n")
+    }
+
+    s
 }
 
 #[cfg(test)]
@@ -311,26 +306,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_class() {
-        let _ =
-            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-                .is_test(true)
-                .try_init();
+    fn test() {
+        let inc = Inc::from_str("new['view[main]'] = test").unwrap();
 
-        let class = Class::from_str("test<test, test<test, test>>");
-
-        assert_eq!(class.left_op.unwrap().name, "test")
+        assert_eq!(inc.class().as_value().unwrap(), "new");
     }
 
     #[test]
-    fn test_string() {
+    fn test_display() {
         let _ =
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
                 .is_test(true)
                 .try_init();
 
-        let class = Class::from_str("test<test, 'test '>");
+        let inc = Inc::from_str("new['view[main]'] = test").unwrap();
 
-        assert_eq!(class.right_op.unwrap().name, "test ")
+        assert_eq!(inc.to_string(), "new['view[main]'] = test");
+    }
+
+    #[test]
+    fn test_inc_v() {
+        let _ =
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+                .is_test(true)
+                .try_init();
+
+        let inc_v = inc_v_from_str("new['view[main]'] = test;new['view[main]'] = test;").unwrap();
+
+        assert_eq!(
+            inc_v_to_string(&inc_v),
+            "new['view[main]'] = test;\nnew['view[main]'] = test;\n"
+        )
     }
 }
