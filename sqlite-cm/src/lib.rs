@@ -176,7 +176,7 @@ mod tests {
 
             let rs = ClassExecutor::new(&mut cm)
                 .call(&Class::from_str(
-                    "right<append<type<$test, pair<test, test>>, +<1, 1>>, $test<test, test>>",
+                    "return<append<type<$test, pair<test, test>>, +<1, 1>>, $test<test, test>>",
                 ))
                 .await
                 .unwrap();

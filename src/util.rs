@@ -44,42 +44,42 @@ mod class {
 
         content_v
     }
+}
 
-    pub fn find_pat_ignoring_string(pat: &str, s: &str) -> Option<usize> {
-        let mut pos = 0;
+pub fn find_pat_ignoring_string(pat: &str, s: &str) -> Option<usize> {
+    let mut pos = 0;
 
-        loop {
-            if s[pos..].starts_with(pat) {
-                break;
-            } else if s[pos..].starts_with('\'') {
-                pos += 1;
+    loop {
+        if s[pos..].starts_with(pat) {
+            break;
+        } else if s[pos..].starts_with('\'') {
+            pos += 1;
 
-                loop {
-                    if s[pos..].starts_with('\'') {
-                        pos += 1;
+            loop {
+                if s[pos..].starts_with('\'') {
+                    pos += 1;
 
-                        break;
-                    } else if s[pos..].starts_with('\\') {
-                        pos += 2;
-                    } else {
-                        pos += 1;
-                    }
-
-                    if pos >= s.len() {
-                        panic!("unclosed string!");
-                    }
+                    break;
+                } else if s[pos..].starts_with('\\') {
+                    pos += 2;
+                } else {
+                    pos += 1;
                 }
-            } else {
-                pos += 1;
-            }
 
-            if pos >= s.len() {
-                return None;
+                if pos >= s.len() {
+                    panic!("unclosed string!");
+                }
             }
+        } else {
+            pos += 1;
         }
 
-        Some(pos)
+        if pos >= s.len() {
+            return None;
+        }
     }
+
+    Some(pos)
 }
 
 pub fn unescape_word(word: &str) -> String {
@@ -270,7 +270,7 @@ impl Class {
             });
         }
 
-        if let Some(pos) = class::find_pat_ignoring_string("<", s) {
+        if let Some(pos) = find_pat_ignoring_string("<", s) {
             let mut content_v = class::parse_class_v(&s[pos + 1..s.len() - 1]);
 
             let mut origin = Box::new(Self {

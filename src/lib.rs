@@ -2,7 +2,7 @@ pub mod err;
 pub mod util;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     future::Future,
     pin::Pin,
 };
@@ -175,7 +175,7 @@ pub trait AsClassManager: Send + Sync {
                         Ok(vec![class.right_op.as_ref().unwrap().name.clone()])
                     }
                 }
-                "right" => Ok(vec![class.right_op.as_ref().unwrap().name.clone()]),
+                "return" => Ok(vec![class.right_op.as_ref().unwrap().name.clone()]),
                 "pair" => Ok(vec![class.pair()?]),
                 "pair_of" => {
                     self.pair_of(
@@ -189,6 +189,24 @@ pub trait AsClassManager: Send + Sync {
                     class.left_op.as_ref().unwrap().name.clone(),
                     class.right_op.as_ref().unwrap().name.clone()
                 )]),
+                "left_of_pair" => {
+                    let pair = &class.left_op.as_ref().unwrap().name;
+
+                    let pos = util::find_pat_ignoring_string(",", pair)
+                        .ok_or(err::Error::RuntimeError)
+                        .attach_printable_lazy(|| format!("{} is not a pair", pair))?;
+
+                    Ok(vec![util::escape_word(&pair[0..pos].trim())])
+                }
+                "right_of_pair" => {
+                    let pair = &class.left_op.as_ref().unwrap().name;
+
+                    let pos = util::find_pat_ignoring_string(",", pair)
+                        .ok_or(err::Error::RuntimeError)
+                        .attach_printable_lazy(|| format!("{} is not a pair", pair))?;
+
+                    Ok(vec![util::escape_word(pair[pos + 1..].trim())])
+                }
                 "clear" => {
                     let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
 
@@ -207,6 +225,51 @@ pub trait AsClassManager: Send + Sync {
                     .await?;
 
                     Ok(vec![String::new()])
+                }
+                "or" => {
+                    let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
+                    let right_class = Class::from_str(&class.right_op.as_ref().unwrap().name);
+
+                    let mut rs = self.call(&left_class).await?;
+
+                    rs.extend(self.call(&right_class).await?);
+
+                    Ok(rs)
+                }
+                "and" => {
+                    let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
+                    let right_class = Class::from_str(&class.right_op.as_ref().unwrap().name);
+                    let mut left_set = BTreeSet::new();
+                    let mut rs = vec![];
+
+                    let left_item_v = self.call(&left_class).await?;
+                    let right_item_v = self.call(&right_class).await?;
+
+                    left_set.extend(left_item_v);
+
+                    for right_item in right_item_v {
+                        if left_set.contains(&right_item) {
+                            rs.push(right_item);
+                        }
+                    }
+
+                    Ok(rs)
+                }
+                "minus" => {
+                    let left_class = Class::from_str(&class.left_op.as_ref().unwrap().name);
+                    let right_class = Class::from_str(&class.right_op.as_ref().unwrap().name);
+                    let mut left_set = BTreeSet::new();
+
+                    let left_item_v = self.call(&left_class).await?;
+                    let right_item_v = self.call(&right_class).await?;
+
+                    left_set.extend(left_item_v);
+
+                    for right_item in &right_item_v {
+                        left_set.remove(right_item);
+                    }
+
+                    Ok(left_set.into_iter().collect())
                 }
                 _ => self.get(&class.name, &class.pair()?).await,
             }
@@ -507,7 +570,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_right() {
+    fn test_return() {
         let _ =
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
                 .is_test(true)
@@ -525,7 +588,7 @@ mod tests {
 
             let rs = ClassExecutor::new(&mut cm)
                 .call(&Class::from_str(
-                    "right<append<'test<test, test>', +<1, 1>>, test<test, test>>",
+                    "return<append<'test<test, test>', +<1, 1>>, test<test, test>>",
                 ))
                 .await
                 .unwrap();
@@ -554,7 +617,7 @@ mod tests {
 
             let rs = ClassExecutor::new(&mut cm)
                 .call(&Class::from_str(
-                    "right<
+                    "return<
                         append<'test<test, test>', +<1, 1>>,
                         none<, >,
                         test<test, test>
@@ -586,7 +649,7 @@ mod tests {
 
             let rs = ClassExecutor::new(&mut cm)
                 .call(&Class::from_str(
-                    "right<
+                    "return<
                         append<'test<test, test>', new<, >>,
                         test<test, test>
                     >",
@@ -595,6 +658,33 @@ mod tests {
                 .unwrap();
 
             assert_eq!(rs.len(), 1);
+        })
+    }
+
+    #[test]
+    fn test_left_of_pair() {
+        let _ =
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+                .is_test(true)
+                .try_init();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            log::debug!("start");
+
+            let mut cm = ClassManager::new();
+
+            let rs = ClassExecutor::new(&mut cm)
+                .call(&Class::from_str("left_of_pair<'\\'left \\', right', >"))
+                .await
+                .unwrap();
+
+            assert_eq!(rs.len(), 1);
+            assert_eq!(rs[0], "left ");
         })
     }
 }
