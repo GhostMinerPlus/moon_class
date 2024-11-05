@@ -32,8 +32,6 @@ pub trait AsClassManager: Send + Sync {
         'a1: 'f,
     {
         Box::pin(async move {
-            let mut rs = vec![];
-
             for inc in inc_v {
                 let class_v = self.unwrap_value(inc.class()).await?;
                 let source_v = self.unwrap_value(inc.source()).await?;
@@ -42,9 +40,6 @@ pub trait AsClassManager: Send + Sync {
                 for class in &class_v {
                     for source in &source_v {
                         match class.as_str() {
-                            "$result" => {
-                                rs = target_v.clone();
-                            }
                             "$clear" => {
                                 let addr = IncVal::from_str(source)?;
 
@@ -53,20 +48,7 @@ pub trait AsClassManager: Send + Sync {
                                 self.clear(class.as_value().unwrap(), source.as_value().unwrap())
                                     .await?;
                             }
-                            "$new" => {
-                                let addr = IncVal::from_str(source)?;
-
-                                let (class, source) = addr.as_addr().unwrap();
-
-                                self.append(
-                                    class.as_value().unwrap(),
-                                    source.as_value().unwrap(),
-                                    target_v.clone(),
-                                )
-                                .await?;
-                            }
                             _ => {
-                                self.clear(class, source).await?;
                                 self.append(class, source, target_v.clone()).await?;
                             }
                         }
@@ -74,7 +56,7 @@ pub trait AsClassManager: Send + Sync {
                 }
             }
 
-            Ok(rs)
+            self.get("$result", "").await
         })
     }
 
@@ -529,8 +511,8 @@ mod tests {
             let rs = ClassExecutor::new(&mut cm)
                 .execute(
                     &util::inc_v_from_str(
-                        "$new['test[test]'] = test;
-                        $result[] = test[test];",
+                        "test = test[test];
+                        test[test] = $result[];",
                     )
                     .unwrap(),
                 )
@@ -562,9 +544,9 @@ mod tests {
             let rs = ClassExecutor::new(&mut cm)
                 .execute(
                     &util::inc_v_from_str(
-                        "$left[test] = 1;
-                        $right[test] = 1;
-                        $result[] = +[test];",
+                        "1 = $left[test];
+                        1 = $right[test];
+                        +[test] = $result[];",
                     )
                     .unwrap(),
                 )

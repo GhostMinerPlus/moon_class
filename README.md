@@ -1,1 +1,1 @@
-$new['view[main]'] = ?;
+? = view[main];

@@ -232,9 +232,9 @@ impl Display for IncVal {
 }
 
 pub struct Inc {
+    target: IncVal,
     class: IncVal,
     source: IncVal,
-    target: IncVal,
 }
 
 impl Inc {
@@ -256,26 +256,26 @@ impl Inc {
             .ok_or(err::Error::NotFound)
             .attach_printable("expected '=', but not found!")?;
 
-        let (class, source) = match IncVal::from_str(s[0..pos].trim())? {
+        let target = IncVal::from_str(s[0..pos].trim())?;
+
+        let (class, source) = match IncVal::from_str(s[pos + 1..].trim())? {
             IncVal::Value(_) => {
                 return Err(err::Error::SyntaxError).attach_printable("need a source");
             }
             IncVal::Addr((class, source)) => (*class, *source),
         };
 
-        let target = IncVal::from_str(s[pos + 1..].trim())?;
-
         Ok(Self {
+            target,
             class,
             source,
-            target,
         })
     }
 }
 
 impl Display for Inc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}[{}] = {}", self.class, self.source, self.target)
+        write!(f, "{} = {}[{}]", self.target, self.class, self.source)
     }
 }
 
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let inc = Inc::from_str("new['view[main]'] = test").unwrap();
+        let inc = Inc::from_str("test = new['view[main]']").unwrap();
 
         assert_eq!(inc.class().as_value().unwrap(), "new");
     }
@@ -319,9 +319,9 @@ mod tests {
                 .is_test(true)
                 .try_init();
 
-        let inc = Inc::from_str("new['view[main]'] = test").unwrap();
+        let inc = Inc::from_str("test = new['view[main]']").unwrap();
 
-        assert_eq!(inc.to_string(), "new['view[main]'] = test");
+        assert_eq!(inc.to_string(), "test = new['view[main]']");
     }
 
     #[test]
@@ -331,11 +331,11 @@ mod tests {
                 .is_test(true)
                 .try_init();
 
-        let inc_v = inc_v_from_str("new['view[main]'] = test;new['view[main]'] = test;").unwrap();
+        let inc_v = inc_v_from_str("test = new['view[main]'];test = new['view[main]'];").unwrap();
 
         assert_eq!(
             inc_v_to_string(&inc_v),
-            "new['view[main]'] = test;\nnew['view[main]'] = test;\n"
+            "test = new['view[main]'];\ntest = new['view[main]'];\n"
         )
     }
 }

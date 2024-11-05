@@ -145,9 +145,9 @@ mod tests {
             let rs = ClassExecutor::new(&mut cm)
                 .execute(
                     &util::inc_v_from_str(
-                        "$left[test] = 1;
-                        $right[test] = 1;
-                        $result[] = +[test];",
+                        "1 = $left[test];
+                        1 = $right[test];
+                        +[test] = $result[];",
                     )
                     .unwrap(),
                 )
