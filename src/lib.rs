@@ -521,6 +521,30 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         self.get_source(&target_v[0], &class_v[0]).await
                     }
+                    "#if" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        if left_v.is_empty() {
+                            Ok(right_v)
+                        } else {
+                            Ok(left_v)
+                        }
+                    }
+                    "#left" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let mut left_set = HashSet::new();
+
+                        left_set.extend(left_v);
+
+                        for right_item in &right_v {
+                            left_set.remove(right_item);
+                        }
+
+                        Ok(left_set.into_iter().collect())
+                    }
                     _ => self.global_cm.get(class, source).await,
                 }
             }
