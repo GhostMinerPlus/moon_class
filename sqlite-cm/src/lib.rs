@@ -123,8 +123,6 @@ impl AsClassManager for SqliteClassManager {
 mod tests {
     use moon_class::{util, ClassExecutor, ClassManager};
 
-    use super::*;
-
     #[test]
     fn test_add() {
         let _ =

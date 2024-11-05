@@ -1,6 +1,3 @@
-pub mod err;
-pub mod util;
-
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
@@ -8,7 +5,44 @@ use std::{
 };
 
 use json::{array, object};
-use util::{str_2_rs, Inc, IncVal};
+use util::{str_2_rs, Inc};
+
+mod inner {
+    use std::pin::Pin;
+
+    use crate::{err, util::IncVal, AsClassManager, ClassExecutor, Fu};
+
+    pub fn unwrap_value<'a, 'a1, 'f, CM: AsClassManager>(
+        ce: &'a ClassExecutor<'a, CM>,
+        inc_val: &'a1 IncVal,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        Box::pin(async move {
+            match inc_val {
+                IncVal::Value(v) => Ok(vec![v.clone()]),
+                IncVal::Addr((class, source)) => {
+                    let class_v = unwrap_value(ce, class).await?;
+                    let source_v = unwrap_value(ce, source).await?;
+                    let mut rs = vec![];
+
+                    for class in &class_v {
+                        for source in &source_v {
+                            rs.extend(ce.get(class, source).await?);
+                        }
+                    }
+
+                    Ok(rs)
+                }
+            }
+        })
+    }
+}
+
+pub mod err;
+pub mod util;
 
 #[cfg(target_family = "wasm")]
 pub trait Fu: Future {}
@@ -23,70 +57,6 @@ pub trait Fu: Future + Send {}
 impl<T: Future + Send> Fu for T {}
 
 pub trait AsClassManager: Send + Sync {
-    fn execute<'a, 'a1, 'f>(
-        &'a mut self,
-        inc_v: &'a1 [Inc],
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-    {
-        Box::pin(async move {
-            for inc in inc_v {
-                let class_v = self.unwrap_value(inc.class()).await?;
-                let source_v = self.unwrap_value(inc.source()).await?;
-                let target_v = self.unwrap_value(inc.target()).await?;
-
-                for class in &class_v {
-                    for source in &source_v {
-                        match class.as_str() {
-                            "$empty" => {
-                                let class_v = self.get("$class", &target_v[0]).await?;
-                                let source_v = self.get("$source", &target_v[0]).await?;
-
-                                self.clear(&class_v[0], &source_v[0]).await?;
-                            }
-                            _ => {
-                                self.append(class, source, target_v.clone()).await?;
-                            }
-                        }
-                    }
-                }
-            }
-
-            self.get("$result", "").await
-        })
-    }
-
-    fn unwrap_value<'a, 'a1, 'f>(
-        &'a self,
-        inc_val: &'a1 IncVal,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-    {
-        Box::pin(async move {
-            match inc_val {
-                IncVal::Value(v) => Ok(vec![v.clone()]),
-                IncVal::Addr((class, source)) => {
-                    let class_v = self.unwrap_value(class).await?;
-                    let source_v = self.unwrap_value(source).await?;
-                    let mut rs = vec![];
-
-                    for class in &class_v {
-                        for source in &source_v {
-                            let target_v = self.get(class, source).await?;
-                            rs.extend(target_v);
-                        }
-                    }
-
-                    Ok(rs)
-                }
-            }
-        })
-    }
-
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,
@@ -256,6 +226,48 @@ impl AsClassManager for ClassManager {
 pub struct ClassExecutor<'cm, CM: AsClassManager> {
     global_cm: &'cm mut CM,
     temp_cm: ClassManager,
+}
+
+impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
+    pub fn execute<'a, 'a1, 'f>(
+        &'a mut self,
+        inc_v: &'a1 [Inc],
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        Box::pin(async move {
+            for inc in inc_v {
+                let class_v = inner::unwrap_value(self, inc.class()).await?;
+                let source_v = inner::unwrap_value(self, inc.source()).await?;
+                let target_v = inner::unwrap_value(self, inc.target()).await?;
+
+                for class in &class_v {
+                    for source in &source_v {
+                        self.append(class, source, target_v.clone()).await?;
+                    }
+                }
+            }
+
+            self.get("$result", "").await
+        })
+    }
+
+    pub fn execute_script<'a, 'a1, 'f>(
+        &'a mut self,
+        script: &'a1 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        Box::pin(async move {
+            let inc_v = util::inc_v_from_str(script)?;
+
+            self.execute(&inc_v).await
+        })
+    }
 }
 
 impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
@@ -431,13 +443,31 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         Ok(rs)
                     }
-                    "dump" => {
+                    "#dump" => {
                         let class_v = self.get("$class", source).await?;
                         let source_v = self.get("$source", source).await?;
 
                         let rj = self.dump_json(&class_v, &source_v).await?;
 
                         Ok(str_2_rs(&rj.to_string()))
+                    }
+                    "#inner" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let mut left_set = HashSet::new();
+
+                        left_set.extend(left_v);
+
+                        let mut rs = vec![];
+
+                        for right_item in right_v {
+                            if left_set.contains(&right_item) {
+                                rs.push(right_item);
+                            }
+                        }
+
+                        Ok(rs)
                     }
                     _ => self.global_cm.get(class, source).await,
                 }
@@ -476,10 +506,20 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
         'a2: 'f,
     {
         Box::pin(async move {
-            if class.starts_with('$') {
-                self.temp_cm.append(class, source, target_v).await
-            } else {
-                self.global_cm.append(class, source, target_v).await
+            match class {
+                "#empty" => {
+                    let class_v = self.get("$class", &target_v[0]).await?;
+                    let source_v = self.get("$source", &target_v[0]).await?;
+
+                    self.clear(&class_v[0], &source_v[0]).await
+                }
+                _ => {
+                    if class.starts_with('$') {
+                        self.temp_cm.append(class, source, target_v).await
+                    } else {
+                        self.global_cm.append(class, source, target_v).await
+                    }
+                }
             }
         })
     }
@@ -507,12 +547,9 @@ mod tests {
             let mut cm = ClassManager::new();
 
             let rs = ClassExecutor::new(&mut cm)
-                .execute(
-                    &util::inc_v_from_str(
-                        "test = test[test];
-                        test[test] = $result[];",
-                    )
-                    .unwrap(),
+                .execute_script(
+                    "test = test[test];
+                    test[test] = $result[];",
                 )
                 .await
                 .unwrap();
@@ -540,19 +577,56 @@ mod tests {
             let mut cm = ClassManager::new();
 
             let rs = ClassExecutor::new(&mut cm)
-                .execute(
-                    &util::inc_v_from_str(
-                        "1 = $left[test];
-                        1 = $right[test];
-                        +[test] = $result[];",
-                    )
-                    .unwrap(),
+                .execute_script(
+                    "1 = $left[test];
+                    1 = $right[test];
+                    +[test] = $result[];",
                 )
                 .await
                 .unwrap();
 
             assert_eq!(rs.len(), 1);
             assert_eq!(rs[0], "2");
+        })
+    }
+
+    #[test]
+    fn test_json_io() {
+        let _ =
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+                .is_test(true)
+                .try_init();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            log::debug!("start");
+
+            let mut cm = ClassManager::new();
+
+            let mut ce = ClassExecutor::new(&mut cm);
+
+            ce.load_json(
+                "$data",
+                "",
+                &object! {
+                    "$width": 1024,
+                    "$height": 1024
+                },
+            )
+            .await
+            .unwrap();
+
+            let rs = ce
+                .execute_script("$width[$data[]] = $result[];")
+                .await
+                .unwrap();
+
+            assert_eq!(rs.len(), 1);
+            assert_eq!(rs[0], "1024");
         })
     }
 }
