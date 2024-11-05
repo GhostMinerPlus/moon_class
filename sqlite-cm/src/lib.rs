@@ -117,6 +117,36 @@ impl AsClassManager for SqliteClassManager {
             Ok(())
         })
     }
+
+    fn get_source<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        target: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let rs = sqlx::query(&format!(
+                "SELECT source FROM class_t WHERE target=? and class=?"
+            ))
+            .bind(target)
+            .bind(class)
+            .fetch_all(&self.pool)
+            .await
+            .change_context(moon_class::err::Error::RuntimeError)?;
+
+            let mut arr = vec![];
+
+            for row in rs {
+                arr.push(row.get(0));
+            }
+
+            Ok(arr)
+        })
+    }
 }
 
 #[cfg(test)]

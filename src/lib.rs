@@ -67,6 +67,16 @@ pub trait AsClassManager: Send + Sync {
         'a1: 'f,
         'a2: 'f;
 
+    fn get_source<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        target: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f;
+
     fn clear<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 str,
@@ -100,7 +110,7 @@ pub struct ClassManager {
     unique_id: u64,
     class_mp: HashMap<u64, Item>,
     class_source_inx: HashMap<(String, String), HashSet<u64>>,
-    target_source_inx: HashMap<(String, String), HashSet<u64>>,
+    target_class_inx: HashMap<(String, String), HashSet<u64>>,
 }
 
 impl ClassManager {
@@ -109,7 +119,7 @@ impl ClassManager {
             unique_id: 0,
             class_mp: HashMap::new(),
             class_source_inx: HashMap::new(),
-            target_source_inx: HashMap::new(),
+            target_class_inx: HashMap::new(),
         }
     }
 }
@@ -132,8 +142,8 @@ impl AsClassManager for ClassManager {
             {
                 for id in set {
                     if let Some(item_class) = self.class_mp.remove(&id) {
-                        self.target_source_inx
-                            .remove(&(item_class.target, source.to_string()));
+                        self.target_class_inx
+                            .remove(&(item_class.target, class.to_string()));
                     }
                 }
             }
@@ -180,16 +190,16 @@ impl AsClassManager for ClassManager {
                     self.class_source_inx.insert(class_pair_k, set);
                 }
 
-                let item_class_k = (target.clone(), class.to_string());
+                let target_class_k = (target.clone(), class.to_string());
 
-                if let Some(set) = self.target_source_inx.get_mut(&item_class_k) {
+                if let Some(set) = self.target_class_inx.get_mut(&target_class_k) {
                     set.insert(id);
                 } else {
                     let mut set = HashSet::new();
 
                     set.insert(id);
 
-                    self.target_source_inx.insert(item_class_k, set);
+                    self.target_class_inx.insert(target_class_k, set);
                 }
 
                 id += 1;
@@ -213,6 +223,29 @@ impl AsClassManager for ClassManager {
             let class_pair_k = (class.to_string(), source.to_string());
 
             match self.class_source_inx.get(&class_pair_k) {
+                Some(set) => Ok(set
+                    .iter()
+                    .map(|id| self.class_mp.get(id).unwrap().target.clone())
+                    .collect()),
+                None => Ok(vec![]),
+            }
+        })
+    }
+
+    fn get_source<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        target: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let target_class_k = (target.to_string(), class.to_string());
+
+            match self.target_class_inx.get(&target_class_k) {
                 Some(set) => Ok(set
                     .iter()
                     .map(|id| self.class_mp.get(id).unwrap().target.clone())
@@ -469,6 +502,12 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         Ok(rs)
                     }
+                    "#source" => {
+                        let target_v = self.get("$target", source).await?;
+                        let class_v = self.get("$class", source).await?;
+
+                        self.get_source(&target_v[0], &class_v[0]).await
+                    }
                     _ => self.global_cm.get(class, source).await,
                 }
             }
@@ -520,6 +559,25 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                         self.global_cm.append(class, source, target_v).await
                     }
                 }
+            }
+        })
+    }
+
+    fn get_source<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        target: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            if class.starts_with('$') {
+                self.temp_cm.get_source(target, class).await
+            } else {
+                self.global_cm.get_source(target, class).await
             }
         })
     }
