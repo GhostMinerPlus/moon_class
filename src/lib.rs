@@ -7,7 +7,8 @@ use std::{
     pin::Pin,
 };
 
-use util::{Inc, IncVal};
+use json::{array, object};
+use util::{str_2_rs, Inc, IncVal};
 
 #[cfg(target_family = "wasm")]
 pub trait Fu: Future {}
@@ -284,6 +285,86 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
             temp_cm: ClassManager::new(),
         }
     }
+
+    pub fn load_json<'a, 'b, 'c, 'd, 'f>(
+        &'a mut self,
+        class: &'b str,
+        source: &'c str,
+        jv: &'d json::JsonValue,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'b: 'f,
+        'c: 'f,
+        'd: 'f,
+    {
+        Box::pin(async move {
+            match jv {
+                json::JsonValue::Object(object) => {
+                    let new_source = uuid::Uuid::new_v4().to_string();
+
+                    for (class, sub_jv) in object.iter() {
+                        self.load_json(class, &new_source, sub_jv).await?;
+                    }
+
+                    self.append(class, source, vec![new_source]).await
+                }
+                json::JsonValue::Array(vec) => {
+                    for sub_jv in vec.iter() {
+                        self.load_json(class, source, sub_jv).await?;
+                    }
+
+                    Ok(())
+                }
+                json::JsonValue::Null => Ok(()),
+                json::JsonValue::Short(short) => {
+                    self.append(class, source, vec![short.to_string()]).await
+                }
+                json::JsonValue::String(s) => self.append(class, source, vec![s.clone()]).await,
+                json::JsonValue::Number(number) => {
+                    self.append(class, source, vec![number.to_string()]).await
+                }
+                json::JsonValue::Boolean(b) => {
+                    self.append(class, source, vec![b.to_string()]).await
+                }
+            }
+        })
+    }
+
+    pub fn dump_json<'a, 'b, 'c, 'f>(
+        &'a self,
+        class_v: &'b [String],
+        source_v: &'c [String],
+    ) -> Pin<Box<dyn Fu<Output = err::Result<json::JsonValue>> + 'f>>
+    where
+        'a: 'f,
+        'b: 'f,
+        'c: 'f,
+    {
+        Box::pin(async move {
+            let mut rj = array![];
+
+            for source in source_v {
+                let mut item = object! {};
+
+                for class in class_v {
+                    let sub_source_v = self.get(class, source).await?;
+
+                    if !sub_source_v.is_empty() {
+                        let _ = item.insert(class, self.dump_json(class_v, &sub_source_v).await?);
+                    }
+                }
+
+                if item.is_empty() {
+                    let _ = rj.push(json::JsonValue::String(source.to_string()));
+                } else {
+                    let _ = rj.push(item);
+                }
+            }
+
+            Ok(rj)
+        })
+    }
 }
 
 impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
@@ -369,6 +450,14 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                         }
 
                         Ok(rs)
+                    }
+                    "dump" => {
+                        let class_v = self.get("$class", source).await?;
+                        let source_v = self.get("$source", source).await?;
+
+                        let rj = self.dump_json(&class_v, &source_v).await?;
+
+                        Ok(str_2_rs(&rj.to_string()))
                     }
                     _ => self.global_cm.get(class, source).await,
                 }
