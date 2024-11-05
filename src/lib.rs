@@ -40,10 +40,10 @@ pub trait AsClassManager: Send + Sync {
                 for class in &class_v {
                     for source in &source_v {
                         match class.as_str() {
-                            "$clear" => {
-                                let addr = IncVal::from_str(source)?;
+                            "$empty" => {
+                                let target = IncVal::from_str(&target_v[0])?;
 
-                                let (class, source) = addr.as_addr().unwrap();
+                                let (class, source) = target.as_addr().unwrap();
 
                                 self.clear(class.as_value().unwrap(), source.as_value().unwrap())
                                     .await?;
