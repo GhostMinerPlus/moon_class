@@ -276,9 +276,22 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
                 let source_v = inner::unwrap_value(self, inc.source()).await?;
                 let target_v = inner::unwrap_value(self, inc.target()).await?;
 
-                for class in &class_v {
-                    for source in &source_v {
-                        self.append(class, source, target_v.clone()).await?;
+                match inc.operator() {
+                    util::Opt::Append => {
+                        for class in &class_v {
+                            for source in &source_v {
+                                self.append(class, source, target_v.clone()).await?;
+                            }
+                        }
+                    }
+                    util::Opt::Set => {
+                        for class in &class_v {
+                            for source in &source_v {
+                                self.clear(class, source).await?;
+
+                                self.append(class, source, target_v.clone()).await?;
+                            }
+                        }
                     }
                 }
             }
@@ -545,20 +558,10 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
         'a2: 'f,
     {
         Box::pin(async move {
-            match class {
-                "#empty" => {
-                    let class_v = self.get("$class", &target_v[0]).await?;
-                    let source_v = self.get("$source", &target_v[0]).await?;
-
-                    self.clear(&class_v[0], &source_v[0]).await
-                }
-                _ => {
-                    if class.starts_with('$') {
-                        self.temp_cm.append(class, source, target_v).await
-                    } else {
-                        self.global_cm.append(class, source, target_v).await
-                    }
-                }
+            if class.starts_with('$') {
+                self.temp_cm.append(class, source, target_v).await
+            } else {
+                self.global_cm.append(class, source, target_v).await
             }
         })
     }

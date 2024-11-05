@@ -231,8 +231,23 @@ impl Display for IncVal {
     }
 }
 
+pub enum Opt {
+    Append,
+    Set,
+}
+
+impl Display for Opt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Opt::Append => write!(f, "+="),
+            Opt::Set => write!(f, "="),
+        }
+    }
+}
+
 pub struct Inc {
     target: IncVal,
+    operator: Opt,
     class: IncVal,
     source: IncVal,
 }
@@ -250,13 +265,21 @@ impl Inc {
         &self.target
     }
 
+    pub fn operator(&self) -> &Opt {
+        &self.operator
+    }
+
     /// new('view(main)'), ?
     pub fn from_str(s: &str) -> err::Result<Self> {
         let pos = find_pat_ignoring_string("=", s)?
             .ok_or(err::Error::NotFound)
             .attach_printable("expected '=', but not found!")?;
 
-        let target = IncVal::from_str(s[0..pos].trim())?;
+        let (target, operator) = if s[pos - 1..].starts_with("+=") {
+            (IncVal::from_str(s[0..pos - 1].trim())?, Opt::Append)
+        } else {
+            (IncVal::from_str(s[0..pos].trim())?, Opt::Set)
+        };
 
         let (class, source) = match IncVal::from_str(s[pos + 1..].trim())? {
             IncVal::Value(_) => {
@@ -269,6 +292,7 @@ impl Inc {
 
         Ok(Self {
             target,
+            operator,
             class,
             source,
         })
@@ -277,7 +301,11 @@ impl Inc {
 
 impl Display for Inc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} = {}[{}]", self.target, self.class, self.source)
+        write!(
+            f,
+            "{} {} {}[{}]",
+            self.target, self.operator, self.class, self.source
+        )
     }
 }
 
