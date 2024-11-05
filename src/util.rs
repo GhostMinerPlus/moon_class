@@ -260,7 +260,9 @@ impl Inc {
 
         let (class, source) = match IncVal::from_str(s[pos + 1..].trim())? {
             IncVal::Value(_) => {
-                return Err(err::Error::SyntaxError).attach_printable("need a source");
+                return Err(err::Error::SyntaxError).attach_printable_lazy(|| {
+                    format!("'{}' need a source but not found!", &s[pos + 1..].trim())
+                });
             }
             IncVal::Addr((class, source)) => (*class, *source),
         };
