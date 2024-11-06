@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     future::Future,
     pin::Pin,
 };
@@ -109,8 +109,8 @@ pub struct Item {
 pub struct ClassManager {
     unique_id: u64,
     class_mp: HashMap<u64, Item>,
-    class_source_inx: HashMap<(String, String), HashSet<u64>>,
-    target_class_inx: HashMap<(String, String), HashSet<u64>>,
+    class_source_inx: HashMap<(String, String), BTreeSet<u64>>,
+    target_class_inx: HashMap<(String, String), BTreeSet<u64>>,
 }
 
 impl ClassManager {
@@ -183,7 +183,7 @@ impl AsClassManager for ClassManager {
                 if let Some(set) = self.class_source_inx.get_mut(&class_pair_k) {
                     set.insert(id);
                 } else {
-                    let mut set = HashSet::new();
+                    let mut set = BTreeSet::new();
 
                     set.insert(id);
 
@@ -195,7 +195,7 @@ impl AsClassManager for ClassManager {
                 if let Some(set) = self.target_class_inx.get_mut(&target_class_k) {
                     set.insert(id);
                 } else {
-                    let mut set = HashSet::new();
+                    let mut set = BTreeSet::new();
 
                     set.insert(id);
 
@@ -220,9 +220,9 @@ impl AsClassManager for ClassManager {
         'a2: 'f,
     {
         Box::pin(async move {
-            let class_pair_k = (class.to_string(), source.to_string());
+            let class_source_k = (class.to_string(), source.to_string());
 
-            match self.class_source_inx.get(&class_pair_k) {
+            match self.class_source_inx.get(&class_source_k) {
                 Some(set) => Ok(set
                     .iter()
                     .map(|id| self.class_mp.get(id).unwrap().target.clone())
