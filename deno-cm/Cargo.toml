@@ -1,0 +1,17 @@
+[package]
+name = "deno-cm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+deno_core = "0.318"
+log = "0.4"
+tokio = { version = "1.35", features = ["sync", "time"] }
+error-stack = "0.5"
+serde_json = "1.0"
+
+moon_class = { path = ".." }
+
+[dev-dependencies]
+env_logger = "0.11"
+tokio = { version = "1.35", features = ["full"] }
