@@ -123,10 +123,12 @@ impl CmRuntime {
         // Build a deno_core::Extension providing custom ops
         const APPEND_DECL: OpDecl = inner::cm_append();
         const CLEAR_DECL: OpDecl = inner::cm_clear();
+        const GET_DECL: OpDecl = inner::cm_get();
+        const GET_SOURCE_DECL: OpDecl = inner::cm_get_source();
 
         let ext = Extension {
             name: "cm_ext",
-            ops: std::borrow::Cow::Borrowed(&[APPEND_DECL, CLEAR_DECL]),
+            ops: std::borrow::Cow::Borrowed(&[APPEND_DECL, CLEAR_DECL, GET_DECL, GET_SOURCE_DECL]),
             op_state_fn: Some(Box::new(|op_state| {
                 let id = op_state
                     .resource_table
@@ -178,6 +180,11 @@ impl CmRuntime {
         Ok(rs)
     }
 
+    pub async fn execute_script_local(&mut self, script: String) -> err::Result<serde_json::Value> {
+        self.execute_script(format!("(async function(){{{script}}})()"))
+            .await
+    }
+
     pub fn cm_cell(&mut self) -> Rc<RefCell<dyn AsClassManager>> {
         let js_cm = self
             .js_runtime
@@ -209,10 +216,24 @@ mod tests {
         rt.block_on(async {
             let mut runtime = CmRuntime::new(ClassManager::new());
 
-            let rs = runtime
-                .execute_script(
+            runtime
+                .execute_script_local(
                     r#"
-Deno.core.ops.cm_append("test", "test", ["test"])
+let a = 1;
+Deno.core.ops.cm_append("test", "test", ["test"]);
+return a;
+"#
+                    .to_string(),
+                )
+                .await
+                .unwrap();
+
+            let rs = runtime
+                .execute_script_local(
+                    r#"
+let a = 1;
+await Deno.core.ops.cm_append("test", "test", ["test"]);
+return a;
 "#
                     .to_string(),
                 )

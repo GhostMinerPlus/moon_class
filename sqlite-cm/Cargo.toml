@@ -13,3 +13,6 @@ moon_class = { path = ".." }
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full"] }
 env_logger = "0.11"
+
+[features]
+no_send = ["moon_class/no_send"]
