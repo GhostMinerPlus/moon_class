@@ -12,7 +12,7 @@ mod inner {
 
     use crate::{err, util::IncVal, AsClassManager, ClassExecutor, Fu};
 
-    pub fn unwrap_value<'a, 'a1, 'f, CM: AsClassManager>(
+    pub fn unwrap_value<'a, 'a1, 'f, CM: AsClassManager + Send + Sync>(
         ce: &'a ClassExecutor<'a, CM>,
         inc_val: &'a1 IncVal,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
@@ -44,19 +44,19 @@ mod inner {
 pub mod err;
 pub mod util;
 
-#[cfg(target_family = "wasm")]
+#[cfg(any(target_family = "wasm", feature = "no_send"))]
 pub trait Fu: Future {}
 
-#[cfg(target_family = "wasm")]
+#[cfg(any(target_family = "wasm", feature = "no_send"))]
 impl<T: Future> Fu for T {}
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
 pub trait Fu: Future + Send {}
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
 impl<T: Future + Send> Fu for T {}
 
-pub trait AsClassManager: Send + Sync {
+pub trait AsClassManager {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,
@@ -261,7 +261,7 @@ pub struct ClassExecutor<'cm, CM: AsClassManager> {
     temp_cm: ClassManager,
 }
 
-impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
+impl<'cm, CM: AsClassManager + Send + Sync> ClassExecutor<'cm, CM> {
     pub fn execute<'a, 'a1, 'f>(
         &'a mut self,
         inc_v: &'a1 [Inc],
@@ -316,7 +316,7 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
     }
 }
 
-impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
+impl<'cm, CM: AsClassManager + Send + Sync> ClassExecutor<'cm, CM> {
     pub fn new(global: &'cm mut CM) -> Self {
         Self {
             global_cm: global,
@@ -405,7 +405,7 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
     }
 }
 
-impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
+impl<'cm, CM: AsClassManager + Send + Sync> AsClassManager for ClassExecutor<'cm, CM> {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,

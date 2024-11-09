@@ -119,7 +119,7 @@ pub struct CmRuntime {
 }
 
 impl CmRuntime {
-    pub fn new(cm: Rc<RefCell<dyn AsClassManager>>) -> Self {
+    pub fn new(cm: impl AsClassManager + 'static) -> Self {
         // Build a deno_core::Extension providing custom ops
         const APPEND_DECL: OpDecl = inner::cm_append();
         const CLEAR_DECL: OpDecl = inner::cm_clear();
@@ -128,7 +128,9 @@ impl CmRuntime {
             name: "cm_ext",
             ops: std::borrow::Cow::Borrowed(&[APPEND_DECL, CLEAR_DECL]),
             op_state_fn: Some(Box::new(|op_state| {
-                let id = op_state.resource_table.add(inner::JsClassManager::new(cm));
+                let id = op_state
+                    .resource_table
+                    .add(inner::JsClassManager::new(Rc::new(RefCell::new(cm))));
 
                 log::debug!("op_state_init: {id}");
             })),
@@ -205,7 +207,7 @@ mod tests {
             .unwrap();
 
         rt.block_on(async {
-            let mut runtime = CmRuntime::new(Rc::new(RefCell::new(ClassManager::new())));
+            let mut runtime = CmRuntime::new(ClassManager::new());
 
             let rs = runtime
                 .execute_script(
