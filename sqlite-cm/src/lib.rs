@@ -11,7 +11,7 @@ const CLASS_INIT_SQL: &str = "CREATE TABLE IF NOT EXISTS class_t (
     target varchar(500)
 );
 CREATE INDEX IF NOT EXISTS class_t_class_source ON class_t (class, source);
-CREATE INDEX IF NOT EXISTS class_t_target_source ON class_t (target, source);";
+CREATE INDEX IF NOT EXISTS class_t_target_class ON class_t (target, class);";
 
 pub struct SqliteClassManager {
     pool: Pool<Sqlite>,
