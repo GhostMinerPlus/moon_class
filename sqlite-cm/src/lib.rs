@@ -49,7 +49,7 @@ impl AsClassManager for SqliteClassManager {
         'a2: 'f,
     {
         Box::pin(async move {
-            sqlx::query(&format!("DELETE FROM class_t WHERE class=? and source = ?"))
+            sqlx::query(&format!("DELETE FROM class_t WHERE class=? AND source = ?"))
                 .bind(class)
                 .bind(source)
                 .execute(&self.pool)
@@ -57,36 +57,6 @@ impl AsClassManager for SqliteClassManager {
                 .change_context(moon_class::err::Error::RuntimeError)?;
 
             Ok(())
-        })
-    }
-
-    fn get<'a, 'a1, 'a2, 'f>(
-        &'a self,
-        class: &'a1 str,
-        source: &'a2 str,
-    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            let rs = sqlx::query(&format!(
-                "SELECT target FROM class_t WHERE class=? and source = ?"
-            ))
-            .bind(class)
-            .bind(source)
-            .fetch_all(&self.pool)
-            .await
-            .change_context(moon_class::err::Error::RuntimeError)?;
-
-            let mut arr = vec![];
-
-            for row in rs {
-                arr.push(row.get(0));
-            }
-
-            Ok(arr)
         })
     }
 
@@ -118,6 +88,36 @@ impl AsClassManager for SqliteClassManager {
         })
     }
 
+    fn get<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        class: &'a1 str,
+        source: &'a2 str,
+    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let rs = sqlx::query(&format!(
+                "SELECT target FROM class_t WHERE class=? AND source = ? ORDER BY id"
+            ))
+            .bind(class)
+            .bind(source)
+            .fetch_all(&self.pool)
+            .await
+            .change_context(moon_class::err::Error::RuntimeError)?;
+
+            let mut arr = vec![];
+
+            for row in rs {
+                arr.push(row.get(0));
+            }
+
+            Ok(arr)
+        })
+    }
+
     fn get_source<'a, 'a1, 'a2, 'f>(
         &'a self,
         target: &'a1 str,
@@ -130,7 +130,7 @@ impl AsClassManager for SqliteClassManager {
     {
         Box::pin(async move {
             let rs = sqlx::query(&format!(
-                "SELECT source FROM class_t WHERE target=? and class=?"
+                "SELECT source FROM class_t WHERE target=? AND class=? ORDER BY id"
             ))
             .bind(target)
             .bind(class)
