@@ -90,6 +90,7 @@ pub struct ClassManager {
     class_mp: HashMap<u64, Item>,
     class_source_inx: HashMap<(String, String), BTreeSet<u64>>,
     target_class_inx: HashMap<(String, String), BTreeSet<u64>>,
+    source_inx: HashMap<String, BTreeSet<u64>>,
 }
 
 impl ClassManager {
@@ -99,7 +100,26 @@ impl ClassManager {
             class_mp: HashMap::new(),
             class_source_inx: HashMap::new(),
             target_class_inx: HashMap::new(),
+            source_inx: HashMap::new(),
         }
+    }
+
+    pub fn dump(&self, source: &str) -> json::JsonValue {
+        if let Some(set) = self.source_inx.get(source) {
+            let mut obj = json::object! {};
+
+            for id in set {
+                let item = self.class_mp.get(id).unwrap();
+
+                if let json::JsonValue::Array(vec) = &mut obj[&item.class] {
+                    vec.push(self.dump(&item.target));
+                } else {
+                    obj[&item.class] = json::array![self.dump(&item.target)];
+                }
+            }
+        }
+
+        return json::JsonValue::String(source.to_string());
     }
 }
 
@@ -123,6 +143,7 @@ impl AsClassManager for ClassManager {
                     if let Some(item_class) = self.class_mp.remove(&id) {
                         self.target_class_inx
                             .remove(&(item_class.target, class.to_string()));
+                        self.source_inx.remove(&item_class.source);
                     }
                 }
             }
@@ -179,6 +200,16 @@ impl AsClassManager for ClassManager {
                     set.insert(id);
 
                     self.target_class_inx.insert(target_class_k, set);
+                }
+
+                if let Some(set) = self.source_inx.get_mut(source) {
+                    set.insert(id);
+                } else {
+                    let mut set = BTreeSet::new();
+
+                    set.insert(id);
+
+                    self.source_inx.insert(source.to_string(), set);
                 }
 
                 id += 1;
