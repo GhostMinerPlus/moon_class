@@ -40,8 +40,18 @@ mod inc {
                 return Ok(IncVal::Value(String::new()));
             }
 
-            if (s.starts_with('{') && s.ends_with('}')) || s.starts_with('[') && s.ends_with(']') {
-                return Ok(IncVal::Object(s.to_string()));
+            if ((s.starts_with('{') || s.starts_with("@{")) && s.ends_with('}'))
+                || s.starts_with('[') && s.ends_with(']')
+            {
+                if s.starts_with("@{") {
+                    return Ok(IncVal::Object(format!(
+                        "@{}{}",
+                        uuid::Uuid::new_v4(),
+                        &s[1..]
+                    )));
+                } else {
+                    return Ok(IncVal::Object(s.to_string()));
+                }
             }
 
             if s.starts_with('<') && s.ends_with('>') {
@@ -378,9 +388,18 @@ mod inner {
                         }
 
                         Ok(rs)
-                    } else if s.starts_with('{') {
+                    } else if s.ends_with('}') {
+                        let (mut pos, root) = if s.starts_with('@') {
+                            let pos = s.find('{').unwrap() + 1;
+                            let root = s[1..pos - 1].to_string();
+
+                            log::debug!("unwrap_value: root = {root}");
+
+                            (pos, root)
+                        } else {
+                            (1, uuid::Uuid::new_v4().to_string())
+                        };
                         let mut entry_v = vec![];
-                        let mut pos = 1;
                         let mut start = pos;
 
                         while pos < s.len() {
@@ -424,8 +443,6 @@ mod inner {
 
                             pos += 1;
                         }
-
-                        let root = uuid::Uuid::new_v4().to_string();
 
                         for entry in entry_v {
                             let mut pos = 0;
@@ -483,6 +500,10 @@ mod inner {
                             let value_v =
                                 unwrap_value(ce, &IncVal::from_str(entry[pos + 1..].trim())?)
                                     .await?;
+
+                            if s.starts_with('@') {
+                                ce.clear(key.first().unwrap(), &root).await?;
+                            }
 
                             ce.append(key.first().unwrap(), &root, value_v).await?;
                         }
@@ -1040,22 +1061,22 @@ mod tests {
 2 = $pos();
 
 <
-    +({
+    +(@{
         $left: $sum(),
         $right: $pos()
     }) := $sum();
 
-    +({
+    +(@{
         $left: $pos(),
         $right: 1
     }) := $pos();
 
     [
-        {
-            $case: <#inner({$left: 101, $right: $pos()}) := $result();>,
+        @{
+            $case: <#inner(@{$left: 101, $right: $pos()}) := $result();>,
             $then: <$() := $result();>
         },
-        {$case: <1 := $result();>}
+        @{$case: <1 := $result();>}
     ] = $switch();
 > = $loop();
 
