@@ -8,18 +8,34 @@ pub mod err;
 pub mod util;
 
 #[cfg(any(target_family = "wasm", feature = "no_send"))]
-pub trait Fu: Future {}
+pub trait AsSendSyncOption {}
 
 #[cfg(any(target_family = "wasm", feature = "no_send"))]
-impl<T: Future> Fu for T {}
+impl<T> AsSendSyncOption for T {}
 
 #[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-pub trait Fu: Future + Send {}
+pub trait AsSendSyncOption: Send + Sync {}
 
 #[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-impl<T: Future + Send> Fu for T {}
+impl<T: Send + Sync> AsSendSyncOption for T {}
 
-pub trait AsClassManager {
+#[cfg(any(target_family = "wasm", feature = "no_send"))]
+pub trait AsSendOption {}
+
+#[cfg(any(target_family = "wasm", feature = "no_send"))]
+impl<T> AsSendOption for T {}
+
+#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
+pub trait AsSendOption: Send {}
+
+#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
+impl<T: Send> AsSendOption for T {}
+
+pub trait Fu: Future + AsSendOption {}
+
+impl<T: Future + AsSendOption> Fu for T {}
+
+pub trait AsClassManager: AsSendSyncOption {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,

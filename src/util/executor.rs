@@ -534,24 +534,12 @@ mod inner {
     }
 }
 
-#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-pub trait AsCM: AsClassManager + Send + Sync {}
-
-#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-impl<T> AsCM for T where T: AsClassManager + Send + Sync {}
-
-#[cfg(any(target_family = "wasm", feature = "no_send"))]
-pub trait AsCM: AsClassManager {}
-
-#[cfg(any(target_family = "wasm", feature = "no_send"))]
-impl<T> AsCM for T where T: AsClassManager {}
-
-pub struct ClassExecutor<'cm, CM: AsCM> {
+pub struct ClassExecutor<'cm, CM: AsClassManager> {
     global_cm: &'cm mut CM,
     temp_cm: ClassManager,
 }
 
-impl<'cm, CM: AsCM> ClassExecutor<'cm, CM> {
+impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
     pub fn execute<'a, 'a1, 'f>(
         &'a mut self,
         inc_v: &'a1 [inc::Inc],
@@ -701,7 +689,7 @@ impl<'cm, CM: AsCM> ClassExecutor<'cm, CM> {
     }
 }
 
-impl<'cm, CM: AsCM> AsClassManager for ClassExecutor<'cm, CM> {
+impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,
