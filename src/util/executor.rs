@@ -40,7 +40,7 @@ mod inc {
                 return Ok(IncVal::Value(String::new()));
             }
 
-            if ((s.starts_with('{') || s.starts_with("@{")) && s.ends_with('}'))
+            if ((s.starts_with('{') || s.starts_with("@")) && s.ends_with('}'))
                 || s.starts_with('[') && s.ends_with(']')
             {
                 if s.starts_with("@{") {

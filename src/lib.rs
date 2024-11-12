@@ -117,6 +117,8 @@ impl ClassManager {
                     obj[&item.class] = json::array![self.dump(&item.target)];
                 }
             }
+
+            return obj;
         }
 
         return json::JsonValue::String(source.to_string());
