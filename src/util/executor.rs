@@ -403,10 +403,18 @@ mod inner {
                         let mut start = pos;
 
                         while pos < s.len() {
-                            if s[pos..].starts_with(',') || s[pos..].starts_with('}') {
+                            if s[pos..].starts_with(',') {
                                 entry_v.push(s[start..pos].trim());
 
                                 start = pos + 1;
+                            } else if s[pos..].starts_with('}') {
+                                let last = s[start..pos].trim();
+
+                                if !last.is_empty() {
+                                    entry_v.push(last);
+                                }
+
+                                break;
                             } else if s[pos..].starts_with('[') {
                                 pos += 1 + find_angle_end(&s[pos + 1..], "[", "]")?
                                     .ok_or(err::Error::SyntaxError)
