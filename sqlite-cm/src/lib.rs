@@ -4,14 +4,17 @@ use std::pin::Pin;
 
 use moon_class::{err, AsClassManager};
 
-const CLASS_INIT_SQL: &str = "CREATE TABLE IF NOT EXISTS class_t (
+const CLASS_INIT_SQL: &str = "-- class_t definition
+
+CREATE TABLE class_t (
     id integer PRIMARY KEY,
     class varchar(500),
     source varchar(500),
     target varchar(500)
 );
-CREATE INDEX IF NOT EXISTS class_t_class_source ON class_t (class, source);
-CREATE INDEX IF NOT EXISTS class_t_target_class ON class_t (target, class);";
+
+CREATE INDEX class_t_class_source ON class_t (class, source);
+CREATE INDEX class_t_target_IDX ON class_t (target,class);";
 
 pub struct SqliteClassManager {
     pool: Pool<Sqlite>,
@@ -151,7 +154,10 @@ impl AsClassManager for SqliteClassManager {
 
 #[cfg(test)]
 mod tests {
-    use moon_class::{util, ClassExecutor, ClassManager};
+    use moon_class::{
+        util::executor::ClassExecutor,
+        ClassManager,
+    };
 
     #[test]
     fn test_add() {
@@ -171,13 +177,10 @@ mod tests {
             let mut cm = ClassManager::new();
 
             let rs = ClassExecutor::new(&mut cm)
-                .execute(
-                    &util::inc_v_from_str(
-                        "1 = $left[test];
+                .execute_script(
+                    "1 = $left[test];
                         1 = $right[test];
                         +[test] = $result[];",
-                    )
-                    .unwrap(),
                 )
                 .await
                 .unwrap();
