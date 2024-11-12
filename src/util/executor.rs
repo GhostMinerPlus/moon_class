@@ -657,6 +657,14 @@ impl<'cm, CM: AsCM> ClassExecutor<'cm, CM> {
         })
     }
 
+    pub fn temp_ref(&self) -> &ClassManager {
+        &self.temp_cm
+    }
+
+    pub fn temp(self) -> ClassManager {
+        self.temp_cm
+    }
+
     pub fn dump_json<'a, 'b, 'c, 'f>(
         &'a self,
         class_v: &'b [String],
