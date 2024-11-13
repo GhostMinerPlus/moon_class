@@ -782,10 +782,7 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                         Ok(rs)
                     }
                     "#dump" => {
-                        let class_v = self.get("$class", source).await?;
-                        let source_v = self.get("$source", source).await?;
-
-                        let rj = self.dump_json(&class_v, &source_v).await?;
+                        let rj = self.temp_cm.dump(source);
 
                         Ok(str_2_rs(&rj.to_string()))
                     }
