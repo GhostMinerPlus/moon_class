@@ -178,9 +178,9 @@ mod tests {
 
             let rs = ClassExecutor::new(&mut cm)
                 .execute_script(
-                    "1 = $left[test];
-                        1 = $right[test];
-                        +[test] = $result[];",
+                    "1 = $left(test);
+                        1 = $right(test);
+                        +(test) = $result();",
                 )
                 .await
                 .unwrap();

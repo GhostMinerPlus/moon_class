@@ -73,13 +73,13 @@ mod inc {
 
                         return Ok(Self::Addr((Box::new(class), Box::new(source))));
                     }
-                } else if s[pos..].starts_with('\'')
+                } else if s[pos..].starts_with('\"')
                     && (pos == 0 || !s[pos - 1..].starts_with('\\'))
                 {
                     pos -= 1 + r_find_string_start(&s[..pos])
                         .ok_or(err::Error::SyntaxError)
                         .attach_printable_lazy(|| {
-                            format!("{}: expected '\'' at 0, but not found!", &s[..pos + 1])
+                            format!("{}: expected '\"' at 0, but not found!", &s[..pos + 1])
                         })?;
                 } else if s[pos..].starts_with('>') {
                     pos -= 1 + r_find_angle_start(&s[..pos], "<", ">")?
@@ -189,12 +189,12 @@ mod inc {
                         .attach_printable_lazy(|| {
                             format!("{}: expected '{{', but not found!", &s[pos..])
                         })?;
-                } else if s[pos..].starts_with('\'') {
+                } else if s[pos..].starts_with('\"') {
                     pos += 1 + match find_string_end(&s[pos + 1..]) {
                         Some(end) => end,
                         None => {
                             return Err(err::Error::SyntaxError).attach_printable_lazy(|| {
-                                format!("{}: expected '\'', but not found!", &s[pos..])
+                                format!("{}: expected '\"', but not found!", &s[pos..])
                             });
                         }
                     };
@@ -278,9 +278,9 @@ mod inc {
             .is_test(true)
             .try_init();
 
-            let inc = Inc::from_str("test := new('view(main)')").unwrap();
+            let inc = Inc::from_str("test := new(\"view(main)\")").unwrap();
 
-            assert_eq!(inc.to_string(), "test := new('view(main)')");
+            assert_eq!(inc.to_string(), "test := new(\"view(main)\")");
         }
 
         #[test]
@@ -292,12 +292,12 @@ mod inc {
             .try_init();
 
             let inc_v =
-                inc_v_from_str("test = new('view(main)');[{<test;=(>}] = new('view(main)');")
+                inc_v_from_str("test = new(\"view(main)\");[{<test;=(>}] = new(\"view(main)\");")
                     .unwrap();
 
             assert_eq!(
                 inc_v_to_string(&inc_v),
-                "test = new('view(main)');\n[{<test;=(>}] = new('view(main)');\n"
+                "test = new(\"view(main)\");\n[{<test;=(>}] = new(\"view(main)\");\n"
             )
         }
     }
@@ -351,14 +351,14 @@ mod inner {
                                     .attach_printable_lazy(|| {
                                         format!("{}: expected '{{', but not found!", &s[pos..])
                                     })?;
-                            } else if s[pos..].starts_with('\'') {
+                            } else if s[pos..].starts_with('\"') {
                                 pos += 1 + match find_string_end(&s[pos + 1..]) {
                                     Some(end) => end,
                                     None => {
                                         return Err(err::Error::SyntaxError).attach_printable_lazy(
                                             || {
                                                 format!(
-                                                    "{}: expected '\'', but not found!",
+                                                    "{}: expected '\"', but not found!",
                                                     &s[pos..]
                                                 )
                                             },
@@ -427,14 +427,14 @@ mod inner {
                                     .attach_printable_lazy(|| {
                                         format!("{}: expected '{{', but not found!", &s[pos..])
                                     })?;
-                            } else if s[pos..].starts_with('\'') {
+                            } else if s[pos..].starts_with('\"') {
                                 pos += 1 + match find_string_end(&s[pos + 1..]) {
                                     Some(end) => end,
                                     None => {
                                         return Err(err::Error::SyntaxError).attach_printable_lazy(
                                             || {
                                                 format!(
-                                                    "{}: expected '\'', but not found!",
+                                                    "{}: expected '\"', but not found!",
                                                     &s[pos..]
                                                 )
                                             },
@@ -476,14 +476,14 @@ mod inner {
                                                 &entry[pos..]
                                             )
                                         })?;
-                                } else if entry[pos..].starts_with('\'') {
+                                } else if entry[pos..].starts_with('\"') {
                                     pos += 1 + match find_string_end(&entry[pos + 1..]) {
                                         Some(end) => end,
                                         None => {
                                             return Err(err::Error::SyntaxError)
                                                 .attach_printable_lazy(|| {
                                                     format!(
-                                                        "{}: expected '\'', but not found!",
+                                                        "{}: expected '\"', but not found!",
                                                         &entry[pos..]
                                                     )
                                                 });
