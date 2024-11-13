@@ -4,7 +4,7 @@ use inc::inc_v_from_str;
 
 use crate::{err, AsClassManager, ClassManager, Fu};
 
-use super::str_2_rs;
+use super::{rs_2_str, str_2_rs};
 
 mod string;
 mod inc {
@@ -781,6 +781,24 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         Ok(rs)
                     }
+                    "%" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let sz = left_v.len();
+
+                        let mut rs = vec![];
+
+                        for i in 0..sz {
+                            let left = left_v[i].parse::<i32>().unwrap();
+                            let right = right_v[i].parse::<i32>().unwrap();
+
+                            rs.push((left % right).to_string());
+                        }
+
+                        Ok(rs)
+                    }
+                    "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
                     "#dump" => {
                         let rj = self.temp_cm.dump(source);
 
@@ -834,6 +852,30 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         Ok(left_set.into_iter().collect())
                     }
+                    "#slice" => {
+                        let source_v = self.get("$source", source).await?;
+                        let from_v = self.get("$from", source).await?;
+                        let to_v = self.get("$to", source).await?;
+
+                        let from = match from_v.first() {
+                            Some(s) => s.parse().unwrap(),
+                            None => 0,
+                        };
+                        let to = match to_v.first() {
+                            Some(s) => s.parse().unwrap(),
+                            None => source_v.len(),
+                        };
+
+                        Ok(source_v[from..to].iter().map(|s| s.clone()).collect())
+                    }
+                    "#index" => {
+                        let source_v = self.get("$source", source).await?;
+                        let index_v = self.get("$index", source).await?;
+
+                        let index = index_v.first().unwrap().parse::<usize>().unwrap();
+
+                        Ok(vec![source_v[index].clone()])
+                    }
                     _ => self.global_cm.get(class, source).await,
                 }
             }
@@ -877,16 +919,10 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                         for target in &target_v {
                             let case_v = self.get("$case", target).await?;
 
-                            if !self
-                                .execute_script(case_v.first().unwrap())
-                                .await?
-                                .is_empty()
-                            {
+                            if !self.execute_script(&rs_2_str(&case_v)).await?.is_empty() {
                                 let then_v = self.get("$then", target).await?;
 
-                                if let Some(then) = then_v.first() {
-                                    self.execute_script(then).await?;
-                                }
+                                self.execute_script(&rs_2_str(&then_v)).await?;
 
                                 break;
                             }
@@ -895,9 +931,16 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                         Ok(())
                     }
                     "$loop" => {
-                        let inc_v = inc_v_from_str(target_v.first().unwrap())?;
+                        let inc_v = inc_v_from_str(&rs_2_str(&target_v))?;
 
                         while !self.execute(&inc_v).await?.is_empty() {}
+
+                        Ok(())
+                    }
+                    "$call" => {
+                        let mut ce = ClassExecutor::new(self.global_cm);
+
+                        ce.execute_script(&rs_2_str(&target_v)).await?;
 
                         Ok(())
                     }
