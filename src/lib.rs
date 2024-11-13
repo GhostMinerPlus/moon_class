@@ -145,9 +145,15 @@ impl AsClassManager for ClassManager {
             {
                 for id in set {
                     if let Some(item_class) = self.class_mp.remove(&id) {
-                        self.target_class_inx
-                            .remove(&(item_class.target, class.to_string()));
-                        self.source_inx.remove(&item_class.source);
+                        if let Some(set) = self
+                            .target_class_inx
+                            .get_mut(&(item_class.target, class.to_string()))
+                        {
+                            set.remove(&id);
+                        }
+                        if let Some(set) = self.source_inx.get_mut(&item_class.source) {
+                            set.remove(&id);
+                        }
                     }
                 }
             }
