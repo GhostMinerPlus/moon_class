@@ -111,6 +111,8 @@ impl ClassManager {
             for id in set {
                 let item = self.class_mp.get(id).unwrap();
 
+                log::debug!("dump: {source}->{}: {}", item.class, item.target);
+
                 if let json::JsonValue::Array(vec) = &mut obj[&item.class] {
                     vec.push(self.dump(&item.target));
                 } else {
