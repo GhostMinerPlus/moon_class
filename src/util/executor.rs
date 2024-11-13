@@ -318,13 +318,14 @@ mod inner {
 
     use super::inc::IncVal;
 
-    pub fn unwrap_value<'a, 'a1, 'f, CM: AsClassManager + Send + Sync>(
+    pub fn unwrap_value<'a, 'a1, 'f, CM>(
         ce: &'a mut ClassExecutor<'_, CM>,
         inc_val: &'a1 IncVal,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        CM: AsClassManager,
     {
         Box::pin(async move {
             match inc_val {
