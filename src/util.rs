@@ -7,22 +7,7 @@ pub fn str_of_value(word: &str) -> String {
         .replace("\t", "\\t")
         .replace("\"", "\\\"");
 
-    if content.len() > word.len()
-        || content.contains('[')
-        || content.contains(']')
-        || content.contains('(')
-        || content.contains(')')
-        || content.contains('{')
-        || content.contains('}')
-        || content.contains('=')
-        || content.contains(';')
-        || content.contains('?')
-        || content.contains(' ')
-    {
-        format!("\"{content}\"")
-    } else {
-        word.to_string()
-    }
+    format!("\"{content}\"")
 }
 
 pub fn value_of_str(mut word: &str) -> String {

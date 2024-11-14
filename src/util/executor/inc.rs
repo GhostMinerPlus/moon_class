@@ -267,7 +267,7 @@ mod tests {
 
         let inc = Inc::from_str("test := new(\"view(main)\")").unwrap();
 
-        assert_eq!(inc.to_string(), "test := new(\"view(main)\")");
+        assert_eq!(inc.to_string(), "\"test\" := \"new\"(\"view(main)\")");
     }
 
     #[test]
@@ -283,7 +283,7 @@ mod tests {
 
         assert_eq!(
             inc_v_to_string(&inc_v),
-            "test = new(\"view(main)\");\n[{<test;=(>}] = new(\"view(main)\");\n"
+            "\"test\" = \"new\"(\"view(main)\");\n[{<test;=(>}] = \"new\"(\"view(main)\");\n"
         )
     }
 }
