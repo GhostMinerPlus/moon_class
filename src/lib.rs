@@ -4,8 +4,6 @@ use std::{
     pin::Pin,
 };
 
-use util::{executor::ClassExecutor, rs_2_str};
-
 pub mod err;
 pub mod util;
 
@@ -42,38 +40,6 @@ pub trait AsClassManager: AsSendSyncOption {
         &'a self,
         class: &'a1 str,
         source: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f;
-
-    fn call<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 str,
-        source: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-        Self: Sized,
-    {
-        Box::pin(async move {
-            let script_v = self.get("script", class).await?;
-
-            let mut ce = ClassExecutor::new(self);
-
-            ce.append("$source", "", vec![source.to_string()]).await?;
-
-            ce.execute_script(&rs_2_str(&script_v)).await
-        })
-    }
-
-    fn get_source<'a, 'a1, 'a2, 'f>(
-        &'a self,
-        target: &'a1 str,
-        class: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
@@ -148,6 +114,29 @@ impl ClassManager {
         } else {
             json::JsonValue::String(source.to_string())
         }
+    }
+
+    pub fn get_source<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        target: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let target_class_k = (target.to_string(), class.to_string());
+
+            match self.target_class_inx.get(&target_class_k) {
+                Some(set) => Ok(set
+                    .iter()
+                    .map(|id| self.class_mp.get(id).unwrap().target.clone())
+                    .collect()),
+                None => Ok(vec![]),
+            }
+        })
     }
 }
 
@@ -276,29 +265,6 @@ impl AsClassManager for ClassManager {
             }
 
             Ok(rs)
-        })
-    }
-
-    fn get_source<'a, 'a1, 'a2, 'f>(
-        &'a self,
-        target: &'a1 str,
-        class: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            let target_class_k = (target.to_string(), class.to_string());
-
-            match self.target_class_inx.get(&target_class_k) {
-                Some(set) => Ok(set
-                    .iter()
-                    .map(|id| self.class_mp.get(id).unwrap().target.clone())
-                    .collect()),
-                None => Ok(vec![]),
-            }
         })
     }
 }

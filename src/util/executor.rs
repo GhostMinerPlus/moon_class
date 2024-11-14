@@ -3,7 +3,7 @@ use std::{collections::HashSet, pin::Pin};
 use error_stack::ResultExt;
 use inc::inc_v_from_str;
 
-use crate::{err, AsClassManager, ClassManager, Fu};
+use crate::{err, AsClassManager, AsSendSyncOption, ClassManager, Fu};
 
 use super::{rs_2_str, str_2_rs};
 
@@ -16,16 +16,16 @@ mod inner {
     use crate::{
         err,
         util::executor::{
+            inc,
             string::{find_angle_end, find_string_end},
-            ClassExecutor,
         },
         AsClassManager, Fu,
     };
 
-    use super::inc::IncVal;
+    use super::inc::{Inc, IncVal};
 
     pub fn unwrap_value<'a, 'a1, 'f, CM>(
-        ce: &'a mut ClassExecutor<'_, CM>,
+        ce: &'a mut CM,
         inc_val: &'a1 IncVal,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
@@ -245,14 +245,8 @@ mod inner {
                     let mut rs = vec![];
 
                     for class in &class_v {
-                        if class.starts_with('#') {
-                            for source in &source_v {
-                                rs.extend(ce.call(class, &source).await?);
-                            }
-                        } else {
-                            for source in &source_v {
-                                rs.extend(ce.get(class, &source).await?);
-                            }
+                        for source in &source_v {
+                            rs.extend(ce.get(class, &source).await?);
                         }
                     }
 
@@ -261,54 +255,116 @@ mod inner {
             }
         })
     }
-}
 
-pub mod inc;
-
-pub struct ClassExecutor<'cm, CM: AsClassManager> {
-    global_cm: &'cm mut CM,
-    temp_cm: ClassManager,
-}
-
-impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
-    pub fn execute<'a, 'a1, 'f>(
-        &'a mut self,
-        inc_v: &'a1 [inc::Inc],
+    pub fn execute<'a, 'a1, 'f, CM>(
+        ce: &'a mut CM,
+        inc_v: &'a1 [Inc],
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        CM: AsClassManager,
     {
         Box::pin(async move {
             for inc in inc_v {
-                let class_v = inner::unwrap_value(self, inc.class()).await?;
-                let source_v = inner::unwrap_value(self, inc.source()).await?;
-                let target_v = inner::unwrap_value(self, inc.target()).await?;
+                log::debug!("execute: {inc}");
+
+                let class_v = unwrap_value(ce, inc.class()).await?;
+                let source_v = unwrap_value(ce, inc.source()).await?;
+                let target_v = unwrap_value(ce, inc.target()).await?;
 
                 match inc.operator() {
                     inc::Opt::Append => {
                         for class in &class_v {
                             for source in &source_v {
-                                self.append(class, source, target_v.clone()).await?;
+                                ce.append(class, source, target_v.clone()).await?;
                             }
                         }
                     }
                     inc::Opt::Set => {
                         for class in &class_v {
                             for source in &source_v {
-                                self.clear(class, source).await?;
+                                ce.clear(class, source).await?;
 
-                                self.append(class, source, target_v.clone()).await?;
+                                ce.append(class, source, target_v.clone()).await?;
                             }
                         }
                     }
                 }
             }
 
-            self.get("$result", "").await
+            ce.get("$result", "").await
         })
     }
 
+    pub fn execute_script<'a, 'a1, 'f, CM>(
+        ce: &'a mut CM,
+        script: &'a1 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        CM: AsClassManager,
+    {
+        Box::pin(async move {
+            let inc_v = inc::inc_v_from_str(script)?;
+
+            log::debug!("{:?}", inc_v);
+
+            execute(ce, &inc_v).await
+        })
+    }
+}
+
+pub mod inc;
+
+pub trait ClassManagerHolder {
+    type CM: AsClassManager;
+
+    fn temp_ref(&self) -> &ClassManager;
+
+    fn temp_mut(&mut self) -> &mut ClassManager;
+
+    fn global_ref(&self) -> &Self::CM;
+
+    fn global_mut(&mut self) -> Option<&mut Self::CM>;
+}
+
+pub struct ClassExecutor<'cm, CM> {
+    global_cm: &'cm mut CM,
+    temp_cm: ClassManager,
+}
+
+impl<'cm, CM> ClassExecutor<'cm, CM> {
+    pub fn new(global: &'cm mut CM) -> Self {
+        Self {
+            global_cm: global,
+            temp_cm: ClassManager::new(),
+        }
+    }
+}
+
+impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ClassExecutor<'cm, AsCM> {
+    type CM = AsCM;
+
+    fn temp_ref(&self) -> &ClassManager {
+        &self.temp_cm
+    }
+
+    fn temp_mut(&mut self) -> &mut ClassManager {
+        &mut self.temp_cm
+    }
+
+    fn global_ref(&self) -> &Self::CM {
+        self.global_cm
+    }
+
+    fn global_mut(&mut self) -> Option<&mut Self::CM> {
+        Some(self.global_cm)
+    }
+}
+
+impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
     pub fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
         script: &'a1 str,
@@ -317,110 +373,19 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
         'a: 'f,
         'a1: 'f,
     {
-        Box::pin(async move {
-            let inc_v = inc::inc_v_from_str(script)?;
-
-            self.execute(&inc_v).await
-        })
-    }
-
-    pub fn new(global: &'cm mut CM) -> Self {
-        Self {
-            global_cm: global,
-            temp_cm: ClassManager::new(),
-        }
-    }
-
-    pub fn load_json<'a, 'b, 'c, 'd, 'f>(
-        &'a mut self,
-        class: &'b str,
-        source: &'c str,
-        jv: &'d json::JsonValue,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'b: 'f,
-        'c: 'f,
-        'd: 'f,
-    {
-        Box::pin(async move {
-            match jv {
-                json::JsonValue::Object(object) => {
-                    let new_source = uuid::Uuid::new_v4().to_string();
-
-                    for (class, sub_jv) in object.iter() {
-                        self.load_json(class, &new_source, sub_jv).await?;
-                    }
-
-                    self.append(class, source, vec![new_source]).await
-                }
-                json::JsonValue::Array(vec) => {
-                    for sub_jv in vec.iter() {
-                        self.load_json(class, source, sub_jv).await?;
-                    }
-
-                    Ok(())
-                }
-                json::JsonValue::Null => Ok(()),
-                json::JsonValue::Short(short) => {
-                    self.append(class, source, vec![short.to_string()]).await
-                }
-                json::JsonValue::String(s) => self.append(class, source, vec![s.clone()]).await,
-                json::JsonValue::Number(number) => {
-                    self.append(class, source, vec![number.to_string()]).await
-                }
-                json::JsonValue::Boolean(b) => {
-                    self.append(class, source, vec![b.to_string()]).await
-                }
-            }
-        })
-    }
-
-    pub fn temp_ref(&self) -> &ClassManager {
-        &self.temp_cm
+        inner::execute_script(self, script)
     }
 
     pub fn temp(self) -> ClassManager {
         self.temp_cm
     }
-
-    pub fn dump_json<'a, 'b, 'c, 'f>(
-        &'a self,
-        class_v: &'b [String],
-        source_v: &'c [String],
-    ) -> Pin<Box<dyn Fu<Output = err::Result<json::JsonValue>> + 'f>>
-    where
-        'a: 'f,
-        'b: 'f,
-        'c: 'f,
-    {
-        Box::pin(async move {
-            let mut rj = json::array![];
-
-            for source in source_v {
-                let mut item = json::object! {};
-
-                for class in class_v {
-                    let sub_source_v = self.get(class, source).await?;
-
-                    if !sub_source_v.is_empty() {
-                        let _ = item.insert(class, self.dump_json(class_v, &sub_source_v).await?);
-                    }
-                }
-
-                if item.is_empty() {
-                    let _ = rj.push(json::JsonValue::String(source.to_string()));
-                } else {
-                    let _ = rj.push(item);
-                }
-            }
-
-            Ok(rj)
-        })
-    }
 }
 
-impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
+impl<'cm, T, AsCM> AsClassManager for T
+where
+    AsCM: AsClassManager,
+    T: ClassManagerHolder<CM = AsCM> + AsSendSyncOption,
+{
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,
@@ -432,96 +397,218 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
         'a2: 'f,
     {
         Box::pin(async move {
+            match class {
+                "+" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    let sz = left_v.len();
+
+                    let mut rs = vec![];
+
+                    for i in 0..sz {
+                        let left = left_v[i].parse::<f64>().unwrap();
+                        let right = right_v[i].parse::<f64>().unwrap();
+
+                        rs.push((left + right).to_string());
+                    }
+
+                    return Ok(rs);
+                }
+                "-" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    let sz = left_v.len();
+
+                    let mut rs = vec![];
+
+                    for i in 0..sz {
+                        let left = left_v[i].parse::<f64>().unwrap();
+                        let right = right_v[i].parse::<f64>().unwrap();
+
+                        rs.push((left - right).to_string());
+                    }
+
+                    return Ok(rs);
+                }
+                "*" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    let sz = left_v.len();
+
+                    let mut rs = vec![];
+
+                    for i in 0..sz {
+                        let left = left_v[i].parse::<f64>().unwrap();
+                        let right = right_v[i].parse::<f64>().unwrap();
+
+                        rs.push((left * right).to_string());
+                    }
+
+                    return Ok(rs);
+                }
+                "/" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    let sz = left_v.len();
+
+                    let mut rs = vec![];
+
+                    for i in 0..sz {
+                        let left = left_v[i].parse::<f64>().unwrap();
+                        let right = right_v[i].parse::<f64>().unwrap();
+
+                        rs.push((left / right).to_string());
+                    }
+
+                    return Ok(rs);
+                }
+                "%" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    let sz = left_v.len();
+
+                    let mut rs = vec![];
+
+                    for i in 0..sz {
+                        let left = left_v[i].parse::<i32>().unwrap();
+                        let right = right_v[i].parse::<i32>().unwrap();
+
+                        rs.push((left % right).to_string());
+                    }
+
+                    return Ok(rs);
+                }
+                _ => (),
+            }
+
             if class.starts_with('$') {
-                self.temp_cm.get(class, source).await
+                self.temp_ref().get(class, source).await
             } else {
-                match class {
-                    "+" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
+                if class.starts_with('#') {
+                    match class {
+                        "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
+                        "#dump" => {
+                            let rj = self.temp_ref().dump(source);
 
-                        let sz = left_v.len();
-
-                        let mut rs = vec![];
-
-                        for i in 0..sz {
-                            let left = left_v[i].parse::<f64>().unwrap();
-                            let right = right_v[i].parse::<f64>().unwrap();
-
-                            rs.push((left + right).to_string());
+                            Ok(str_2_rs(&rj.to_string()))
                         }
+                        "#inner" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
 
-                        Ok(rs)
-                    }
-                    "-" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
+                            let mut left_set = HashSet::new();
 
-                        let sz = left_v.len();
+                            left_set.extend(left_v);
 
-                        let mut rs = vec![];
+                            let mut rs = vec![];
 
-                        for i in 0..sz {
-                            let left = left_v[i].parse::<f64>().unwrap();
-                            let right = right_v[i].parse::<f64>().unwrap();
+                            for right_item in right_v {
+                                if left_set.contains(&right_item) {
+                                    rs.push(right_item);
+                                }
+                            }
 
-                            rs.push((left - right).to_string());
+                            Ok(rs)
                         }
+                        "#if" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
 
-                        Ok(rs)
-                    }
-                    "*" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
-
-                        let sz = left_v.len();
-
-                        let mut rs = vec![];
-
-                        for i in 0..sz {
-                            let left = left_v[i].parse::<f64>().unwrap();
-                            let right = right_v[i].parse::<f64>().unwrap();
-
-                            rs.push((left * right).to_string());
+                            if left_v.is_empty() {
+                                Ok(right_v)
+                            } else {
+                                Ok(left_v)
+                            }
                         }
+                        "#left" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
 
-                        Ok(rs)
-                    }
-                    "/" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
+                            let mut left_set = HashSet::new();
 
-                        let sz = left_v.len();
+                            left_set.extend(left_v);
 
-                        let mut rs = vec![];
+                            for right_item in &right_v {
+                                left_set.remove(right_item);
+                            }
 
-                        for i in 0..sz {
-                            let left = left_v[i].parse::<f64>().unwrap();
-                            let right = right_v[i].parse::<f64>().unwrap();
-
-                            rs.push((left / right).to_string());
+                            Ok(left_set.into_iter().collect())
                         }
+                        "#slice" => {
+                            let source_v = self.get("$source", source).await?;
+                            let from_v = self.get("$from", source).await?;
+                            let to_v = self.get("$to", source).await?;
 
-                        Ok(rs)
-                    }
-                    "%" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
+                            let from = match from_v.first() {
+                                Some(s) => s.parse().unwrap(),
+                                None => 0,
+                            };
+                            let to = match to_v.first() {
+                                Some(s) => s.parse().unwrap(),
+                                None => source_v.len(),
+                            };
 
-                        let sz = left_v.len();
-
-                        let mut rs = vec![];
-
-                        for i in 0..sz {
-                            let left = left_v[i].parse::<i32>().unwrap();
-                            let right = right_v[i].parse::<i32>().unwrap();
-
-                            rs.push((left % right).to_string());
+                            Ok(source_v[from..to].iter().map(|s| s.clone()).collect())
                         }
+                        "#index" => {
+                            let source_v = self.get("$source", source).await?;
+                            let index_v = self.get("$index", source).await?;
 
-                        Ok(rs)
+                            let index = index_v.first().unwrap().parse::<usize>().unwrap();
+
+                            Ok(vec![source_v[index].clone()])
+                        }
+                        "#count" => {
+                            let source_v = self.get("$source", source).await?;
+
+                            Ok(vec![source_v.len().to_string()])
+                        }
+                        "#not" => {
+                            let source_v = self.get("$source", source).await?;
+
+                            let mut rs = vec![];
+
+                            if source_v.is_empty() {
+                                rs.push("1".to_string());
+                            }
+
+                            Ok(rs)
+                        }
+                        "#source" => {
+                            let class_v = self.get("$class", source).await?;
+
+                            if class_v[0].starts_with('$') {
+                                let target_v = self.get("$target", source).await?;
+                                let class_v = self.get("$class", source).await?;
+
+                                self.temp_ref().get_source(&target_v[0], &class_v[0]).await
+                            } else {
+                                let data = self.temp_ref().dump(source);
+
+                                self.global_ref().get(class, &data.to_string()).await
+                            }
+                        }
+                        _ => {
+                            let script_v = self.get("script", class).await?;
+
+                            if !script_v.is_empty() {
+                                let mut ce = ReadOnlyClassExecutor::new(self.global_ref());
+
+                                ce.append("$source", "", vec![source.to_string()]).await?;
+
+                                ce.execute_script(&rs_2_str(&script_v)).await
+                            } else {
+                                self.global_ref().get(class, source).await
+                            }
+                        }
                     }
-                    _ => self.global_cm.get(class, source).await,
+                } else {
+                    self.global_ref().get(class, source).await
                 }
             }
         })
@@ -538,10 +625,16 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
         'a2: 'f,
     {
         Box::pin(async move {
+            if class.starts_with('#') {
+                return Err(err::Error::RuntimeError).attach_printable_lazy(|| {
+                    format!("try to set {class} which starts with '#'!")
+                });
+            }
+
             if class.starts_with('$') {
-                self.temp_cm.clear(class, source).await
+                self.temp_mut().clear(class, source).await
             } else {
-                self.global_cm.clear(class, source).await
+                self.global_mut().unwrap().clear(class, source).await
             }
         })
     }
@@ -558,22 +651,29 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
         'a2: 'f,
     {
         Box::pin(async move {
+            log::debug!("append: {:?} = {class}({source})", target_v);
+
             if class.starts_with('#') {
                 return Err(err::Error::RuntimeError).attach_printable_lazy(|| {
-                    format!("try to set {class} which starts with '#'!")
+                    format!("try to append {class} which starts with '#'!")
                 });
             }
 
             if class.starts_with('$') {
+                self.temp_mut().append(class, source, target_v).await
+            } else if class.starts_with('@') {
                 match class {
-                    "$switch" => {
+                    "@switch" => {
                         for target in &target_v {
                             let case_v = self.get("$case", target).await?;
 
-                            if !self.execute_script(&rs_2_str(&case_v)).await?.is_empty() {
+                            if !inner::execute_script(self, &rs_2_str(&case_v))
+                                .await?
+                                .is_empty()
+                            {
                                 let then_v = self.get("$then", target).await?;
 
-                                self.execute_script(&rs_2_str(&then_v)).await?;
+                                inner::execute_script(self, &rs_2_str(&then_v)).await?;
 
                                 break;
                             }
@@ -581,149 +681,91 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         Ok(())
                     }
-                    "$loop" => {
+                    "@loop" => {
                         let inc_v = inc_v_from_str(&rs_2_str(&target_v))?;
 
-                        while !self.execute(&inc_v).await?.is_empty() {}
+                        while !inner::execute(self, &inc_v).await?.is_empty() {}
 
                         Ok(())
                     }
-                    _ => self.temp_cm.append(class, source, target_v).await,
-                }
-            } else {
-                self.global_cm.append(class, source, target_v).await
-            }
-        })
-    }
+                    _ => {
+                        let script_v = self.get("script", class).await?;
 
-    fn get_source<'a, 'a1, 'a2, 'f>(
-        &'a self,
-        target: &'a1 str,
-        class: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            if class.starts_with('$') {
-                self.temp_cm.get_source(target, class).await
-            } else {
-                self.global_cm.get_source(target, class).await
-            }
-        })
-    }
+                        if !script_v.is_empty() {
+                            let mut ce = ClassExecutor::new(self.global_mut().unwrap());
 
-    fn call<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 str,
-        source: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            match class {
-                "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
-                "#dump" => {
-                    let rj = self.temp_cm.dump(source);
+                            ce.append("$source", "", vec![source.to_string()]).await?;
+                            ce.append("$target", "", target_v).await?;
 
-                    Ok(str_2_rs(&rj.to_string()))
-                }
-                "#inner" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
+                            ce.execute_script(&rs_2_str(&script_v)).await?;
 
-                    let mut left_set = HashSet::new();
-
-                    left_set.extend(left_v);
-
-                    let mut rs = vec![];
-
-                    for right_item in right_v {
-                        if left_set.contains(&right_item) {
-                            rs.push(right_item);
+                            Ok(())
+                        } else {
+                            self.global_mut()
+                                .unwrap()
+                                .append(class, source, target_v)
+                                .await
                         }
                     }
-
-                    Ok(rs)
                 }
-                "#source" => {
-                    let target_v = self.get("$target", source).await?;
-                    let class_v = self.get("$class", source).await?;
-
-                    self.get_source(&target_v[0], &class_v[0]).await
-                }
-                "#if" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
-
-                    if left_v.is_empty() {
-                        Ok(right_v)
-                    } else {
-                        Ok(left_v)
-                    }
-                }
-                "#left" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
-
-                    let mut left_set = HashSet::new();
-
-                    left_set.extend(left_v);
-
-                    for right_item in &right_v {
-                        left_set.remove(right_item);
-                    }
-
-                    Ok(left_set.into_iter().collect())
-                }
-                "#slice" => {
-                    let source_v = self.get("$source", source).await?;
-                    let from_v = self.get("$from", source).await?;
-                    let to_v = self.get("$to", source).await?;
-
-                    let from = match from_v.first() {
-                        Some(s) => s.parse().unwrap(),
-                        None => 0,
-                    };
-                    let to = match to_v.first() {
-                        Some(s) => s.parse().unwrap(),
-                        None => source_v.len(),
-                    };
-
-                    Ok(source_v[from..to].iter().map(|s| s.clone()).collect())
-                }
-                "#index" => {
-                    let source_v = self.get("$source", source).await?;
-                    let index_v = self.get("$index", source).await?;
-
-                    let index = index_v.first().unwrap().parse::<usize>().unwrap();
-
-                    Ok(vec![source_v[index].clone()])
-                }
-                "#count" => {
-                    let source_v = self.get("$source", source).await?;
-
-                    Ok(vec![source_v.len().to_string()])
-                }
-                "#not" => {
-                    let source_v = self.get("$source", source).await?;
-
-                    let mut rs = vec![];
-
-                    if source_v.is_empty() {
-                        rs.push("1".to_string());
-                    }
-
-                    Ok(rs)
-                }
-                _ => self.global_cm.call(class, source).await,
+            } else {
+                self.global_mut()
+                    .unwrap()
+                    .append(class, source, target_v)
+                    .await
             }
         })
+    }
+}
+
+pub struct ReadOnlyClassExecutor<'cm, CM> {
+    global_cm: &'cm CM,
+    temp_cm: ClassManager,
+}
+
+impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
+    pub fn new(global: &'cm CM) -> Self {
+        Self {
+            global_cm: global,
+            temp_cm: ClassManager::new(),
+        }
+    }
+}
+
+impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ReadOnlyClassExecutor<'cm, AsCM> {
+    type CM = AsCM;
+
+    fn temp_ref(&self) -> &ClassManager {
+        &self.temp_cm
+    }
+
+    fn temp_mut(&mut self) -> &mut ClassManager {
+        &mut self.temp_cm
+    }
+
+    fn global_ref(&self) -> &Self::CM {
+        self.global_cm
+    }
+
+    fn global_mut(&mut self) -> Option<&mut Self::CM> {
+        None
+    }
+}
+
+impl<'cm, CM: AsClassManager> ReadOnlyClassExecutor<'cm, CM> {
+    pub fn execute_script<'a, 'a1, 'f>(
+        &'a mut self,
+        script: &'a1 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        inner::execute_script(self, script)
+    }
+
+    pub fn temp(self) -> ClassManager {
+        self.temp_cm
     }
 }
 
@@ -795,46 +837,6 @@ mod tests {
     }
 
     #[test]
-    fn test_json_io() {
-        let _ =
-            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-                .is_test(true)
-                .try_init();
-
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
-        rt.block_on(async {
-            log::debug!("start");
-
-            let mut cm = ClassManager::new();
-
-            let mut ce = ClassExecutor::new(&mut cm);
-
-            ce.load_json(
-                "$data",
-                "",
-                &json::object! {
-                    "$width": 1024,
-                    "$height": 1024
-                },
-            )
-            .await
-            .unwrap();
-
-            let rs = ce
-                .execute_script("$width($data()) = $result();")
-                .await
-                .unwrap();
-
-            assert_eq!(rs.len(), 1);
-            assert_eq!(rs[0], "1024");
-        })
-    }
-
-    #[test]
     fn test_obj() {
         let _ =
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
@@ -876,8 +878,8 @@ mod tests {
             $then: <$() := $result();>
         },
         @{$case: <1 := $result();>}
-    ] = $switch();
-> = $loop();
+    ] = @switch();
+> = @loop();
 
 $sum() := $result();
              "#,

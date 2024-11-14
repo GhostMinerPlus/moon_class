@@ -38,6 +38,36 @@ impl SqliteClassManager {
             .await
             .unwrap();
     }
+
+    pub fn get_source<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        target: &'a1 str,
+        class: &'a2 str,
+    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let rs = sqlx::query(&format!(
+                "SELECT source FROM class_t WHERE target=? AND class=? ORDER BY id"
+            ))
+            .bind(target)
+            .bind(class)
+            .fetch_all(&self.pool)
+            .await
+            .change_context(moon_class::err::Error::RuntimeError)?;
+
+            let mut arr = vec![];
+
+            for row in rs {
+                arr.push(row.get(0));
+            }
+
+            Ok(arr)
+        })
+    }
 }
 
 impl AsClassManager for SqliteClassManager {
@@ -102,52 +132,35 @@ impl AsClassManager for SqliteClassManager {
         'a2: 'f,
     {
         Box::pin(async move {
-            let mut arr = vec![];
+            match class {
+                "#source" => {
+                    let data = json::parse(source).unwrap();
 
-            let rs = sqlx::query(&format!(
-                "SELECT target FROM class_t WHERE class=? AND source = ? ORDER BY id"
-            ))
-            .bind(class)
-            .bind(source)
-            .fetch_all(&self.pool)
-            .await
-            .change_context(moon_class::err::Error::RuntimeError)?;
+                    self.get_source(
+                        data["$target"][0].as_str().unwrap(),
+                        data["$class"][0].as_str().unwrap(),
+                    )
+                    .await
+                }
+                _ => {
+                    let mut arr = vec![];
 
-            for row in rs {
-                arr.push(row.get(0));
+                    let rs = sqlx::query(&format!(
+                        "SELECT target FROM class_t WHERE class=? AND source = ? ORDER BY id"
+                    ))
+                    .bind(class)
+                    .bind(source)
+                    .fetch_all(&self.pool)
+                    .await
+                    .change_context(moon_class::err::Error::RuntimeError)?;
+
+                    for row in rs {
+                        arr.push(row.get(0));
+                    }
+
+                    Ok(arr)
+                }
             }
-
-            Ok(arr)
-        })
-    }
-
-    fn get_source<'a, 'a1, 'a2, 'f>(
-        &'a self,
-        target: &'a1 str,
-        class: &'a2 str,
-    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            let rs = sqlx::query(&format!(
-                "SELECT source FROM class_t WHERE target=? AND class=? ORDER BY id"
-            ))
-            .bind(target)
-            .bind(class)
-            .fetch_all(&self.pool)
-            .await
-            .change_context(moon_class::err::Error::RuntimeError)?;
-
-            let mut arr = vec![];
-
-            for row in rs {
-                arr.push(row.get(0));
-            }
-
-            Ok(arr)
         })
     }
 }

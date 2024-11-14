@@ -12,6 +12,7 @@ use super::string::{
     r_find_string_start,
 };
 
+#[derive(Debug)]
 pub enum IncVal {
     /// xxx, ''
     Value(String),
@@ -113,6 +114,7 @@ impl Display for IncVal {
     }
 }
 
+#[derive(Debug)]
 pub enum Opt {
     Append,
     Set,
@@ -127,6 +129,7 @@ impl Display for Opt {
     }
 }
 
+#[derive(Debug)]
 pub struct Inc {
     target: IncVal,
     operator: Opt,
