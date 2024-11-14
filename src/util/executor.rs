@@ -397,95 +397,6 @@ where
         'a2: 'f,
     {
         Box::pin(async move {
-            match class {
-                "+" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
-
-                    let sz = left_v.len();
-
-                    let mut rs = vec![];
-
-                    for i in 0..sz {
-                        let left = left_v[i].parse::<f64>().unwrap();
-                        let right = right_v[i].parse::<f64>().unwrap();
-
-                        rs.push((left + right).to_string());
-                    }
-
-                    return Ok(rs);
-                }
-                "-" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
-
-                    let sz = left_v.len();
-
-                    let mut rs = vec![];
-
-                    for i in 0..sz {
-                        let left = left_v[i].parse::<f64>().unwrap();
-                        let right = right_v[i].parse::<f64>().unwrap();
-
-                        rs.push((left - right).to_string());
-                    }
-
-                    return Ok(rs);
-                }
-                "*" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
-
-                    let sz = left_v.len();
-
-                    let mut rs = vec![];
-
-                    for i in 0..sz {
-                        let left = left_v[i].parse::<f64>().unwrap();
-                        let right = right_v[i].parse::<f64>().unwrap();
-
-                        rs.push((left * right).to_string());
-                    }
-
-                    return Ok(rs);
-                }
-                "/" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
-
-                    let sz = left_v.len();
-
-                    let mut rs = vec![];
-
-                    for i in 0..sz {
-                        let left = left_v[i].parse::<f64>().unwrap();
-                        let right = right_v[i].parse::<f64>().unwrap();
-
-                        rs.push((left / right).to_string());
-                    }
-
-                    return Ok(rs);
-                }
-                "%" => {
-                    let left_v = self.get("$left", source).await?;
-                    let right_v = self.get("$right", source).await?;
-
-                    let sz = left_v.len();
-
-                    let mut rs = vec![];
-
-                    for i in 0..sz {
-                        let left = left_v[i].parse::<i32>().unwrap();
-                        let right = right_v[i].parse::<i32>().unwrap();
-
-                        rs.push((left % right).to_string());
-                    }
-
-                    return Ok(rs);
-                }
-                _ => (),
-            }
-
             if class.starts_with('$') {
                 self.temp_ref().get(class, source).await
             } else {
@@ -608,7 +519,94 @@ where
                         }
                     }
                 } else {
-                    self.global_ref().get(class, source).await
+                    match class {
+                        "+" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
+
+                            let sz = left_v.len();
+
+                            let mut rs = vec![];
+
+                            for i in 0..sz {
+                                let left = left_v[i].parse::<f64>().unwrap();
+                                let right = right_v[i].parse::<f64>().unwrap();
+
+                                rs.push((left + right).to_string());
+                            }
+
+                            Ok(rs)
+                        }
+                        "-" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
+
+                            let sz = left_v.len();
+
+                            let mut rs = vec![];
+
+                            for i in 0..sz {
+                                let left = left_v[i].parse::<f64>().unwrap();
+                                let right = right_v[i].parse::<f64>().unwrap();
+
+                                rs.push((left - right).to_string());
+                            }
+
+                            Ok(rs)
+                        }
+                        "*" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
+
+                            let sz = left_v.len();
+
+                            let mut rs = vec![];
+
+                            for i in 0..sz {
+                                let left = left_v[i].parse::<f64>().unwrap();
+                                let right = right_v[i].parse::<f64>().unwrap();
+
+                                rs.push((left * right).to_string());
+                            }
+
+                            Ok(rs)
+                        }
+                        "/" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
+
+                            let sz = left_v.len();
+
+                            let mut rs = vec![];
+
+                            for i in 0..sz {
+                                let left = left_v[i].parse::<f64>().unwrap();
+                                let right = right_v[i].parse::<f64>().unwrap();
+
+                                rs.push((left / right).to_string());
+                            }
+
+                            Ok(rs)
+                        }
+                        "%" => {
+                            let left_v = self.get("$left", source).await?;
+                            let right_v = self.get("$right", source).await?;
+
+                            let sz = left_v.len();
+
+                            let mut rs = vec![];
+
+                            for i in 0..sz {
+                                let left = left_v[i].parse::<i32>().unwrap();
+                                let right = right_v[i].parse::<i32>().unwrap();
+
+                                rs.push((left % right).to_string());
+                            }
+
+                            Ok(rs)
+                        }
+                        _ => self.global_ref().get(class, source).await,
+                    }
                 }
             }
         })
