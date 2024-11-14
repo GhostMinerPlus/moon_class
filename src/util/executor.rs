@@ -656,9 +656,13 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                     "$call" => {
                         let mut ce = ClassExecutor::new(self.global_cm);
 
-                        ce.execute_script(&rs_2_str(&target_v)).await?;
+                        ce.append("$source", "", vec![source.to_string()]).await?;
 
-                        Ok(())
+                        let rs = ce.execute_script(&rs_2_str(&target_v)).await?;
+
+                        self.clear("$result", "").await?;
+
+                        self.append("$result", "", rs).await
                     }
                     _ => self.temp_cm.append(class, source, target_v).await,
                 }
