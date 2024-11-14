@@ -154,10 +154,7 @@ impl AsClassManager for SqliteClassManager {
 
 #[cfg(test)]
 mod tests {
-    use moon_class::{
-        util::executor::ClassExecutor,
-        ClassManager,
-    };
+    use moon_class::{util::executor::ClassExecutor, ClassManager};
 
     #[test]
     fn test_add() {

@@ -1,5 +1,6 @@
 use std::{collections::HashSet, pin::Pin};
 
+use error_stack::ResultExt;
 use inc::inc_v_from_str;
 
 use crate::{err, AsClassManager, ClassManager, Fu};
@@ -244,8 +245,14 @@ mod inner {
                     let mut rs = vec![];
 
                     for class in &class_v {
-                        for source in &source_v {
-                            rs.extend(ce.get(class, source).await?);
+                        if class.starts_with('#') {
+                            for source in &source_v {
+                                rs.extend(ce.call(class, source).await?);
+                            }
+                        } else {
+                            for source in &source_v {
+                                rs.extend(ce.get(class, source).await?);
+                            }
                         }
                     }
 
@@ -514,84 +521,6 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         Ok(rs)
                     }
-                    "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
-                    "#dump" => {
-                        let rj = self.temp_cm.dump(source);
-
-                        Ok(str_2_rs(&rj.to_string()))
-                    }
-                    "#inner" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
-
-                        let mut left_set = HashSet::new();
-
-                        left_set.extend(left_v);
-
-                        let mut rs = vec![];
-
-                        for right_item in right_v {
-                            if left_set.contains(&right_item) {
-                                rs.push(right_item);
-                            }
-                        }
-
-                        Ok(rs)
-                    }
-                    "#source" => {
-                        let target_v = self.get("$target", source).await?;
-                        let class_v = self.get("$class", source).await?;
-
-                        self.get_source(&target_v[0], &class_v[0]).await
-                    }
-                    "#if" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
-
-                        if left_v.is_empty() {
-                            Ok(right_v)
-                        } else {
-                            Ok(left_v)
-                        }
-                    }
-                    "#left" => {
-                        let left_v = self.get("$left", source).await?;
-                        let right_v = self.get("$right", source).await?;
-
-                        let mut left_set = HashSet::new();
-
-                        left_set.extend(left_v);
-
-                        for right_item in &right_v {
-                            left_set.remove(right_item);
-                        }
-
-                        Ok(left_set.into_iter().collect())
-                    }
-                    "#slice" => {
-                        let source_v = self.get("$source", source).await?;
-                        let from_v = self.get("$from", source).await?;
-                        let to_v = self.get("$to", source).await?;
-
-                        let from = match from_v.first() {
-                            Some(s) => s.parse().unwrap(),
-                            None => 0,
-                        };
-                        let to = match to_v.first() {
-                            Some(s) => s.parse().unwrap(),
-                            None => source_v.len(),
-                        };
-
-                        Ok(source_v[from..to].iter().map(|s| s.clone()).collect())
-                    }
-                    "#index" => {
-                        let source_v = self.get("$source", source).await?;
-                        let index_v = self.get("$index", source).await?;
-
-                        let index = index_v.first().unwrap().parse::<usize>().unwrap();
-
-                        Ok(vec![source_v[index].clone()])
-                    }
                     _ => self.global_cm.get(class, source).await,
                 }
             }
@@ -629,6 +558,12 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
         'a2: 'f,
     {
         Box::pin(async move {
+            if class.starts_with('#') {
+                return Err(err::Error::RuntimeError).attach_printable_lazy(|| {
+                    format!("try to set {class} which starts with '#'!")
+                });
+            }
+
             if class.starts_with('$') {
                 match class {
                     "$switch" => {
@@ -653,17 +588,6 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
 
                         Ok(())
                     }
-                    "$call" => {
-                        let mut ce = ClassExecutor::new(self.global_cm);
-
-                        ce.append("$source", "", vec![source.to_string()]).await?;
-
-                        let rs = ce.execute_script(&rs_2_str(&target_v)).await?;
-
-                        self.clear("$result", "").await?;
-
-                        self.append("$result", "", rs).await
-                    }
                     _ => self.temp_cm.append(class, source, target_v).await,
                 }
             } else {
@@ -687,6 +611,101 @@ impl<'cm, CM: AsClassManager> AsClassManager for ClassExecutor<'cm, CM> {
                 self.temp_cm.get_source(target, class).await
             } else {
                 self.global_cm.get_source(target, class).await
+            }
+        })
+    }
+
+    fn call<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        class: &'a1 str,
+        source: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            match class {
+                "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
+                "#dump" => {
+                    let rj = self.temp_cm.dump(source);
+
+                    Ok(str_2_rs(&rj.to_string()))
+                }
+                "#inner" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    let mut left_set = HashSet::new();
+
+                    left_set.extend(left_v);
+
+                    let mut rs = vec![];
+
+                    for right_item in right_v {
+                        if left_set.contains(&right_item) {
+                            rs.push(right_item);
+                        }
+                    }
+
+                    Ok(rs)
+                }
+                "#source" => {
+                    let target_v = self.get("$target", source).await?;
+                    let class_v = self.get("$class", source).await?;
+
+                    self.get_source(&target_v[0], &class_v[0]).await
+                }
+                "#if" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    if left_v.is_empty() {
+                        Ok(right_v)
+                    } else {
+                        Ok(left_v)
+                    }
+                }
+                "#left" => {
+                    let left_v = self.get("$left", source).await?;
+                    let right_v = self.get("$right", source).await?;
+
+                    let mut left_set = HashSet::new();
+
+                    left_set.extend(left_v);
+
+                    for right_item in &right_v {
+                        left_set.remove(right_item);
+                    }
+
+                    Ok(left_set.into_iter().collect())
+                }
+                "#slice" => {
+                    let source_v = self.get("$source", source).await?;
+                    let from_v = self.get("$from", source).await?;
+                    let to_v = self.get("$to", source).await?;
+
+                    let from = match from_v.first() {
+                        Some(s) => s.parse().unwrap(),
+                        None => 0,
+                    };
+                    let to = match to_v.first() {
+                        Some(s) => s.parse().unwrap(),
+                        None => source_v.len(),
+                    };
+
+                    Ok(source_v[from..to].iter().map(|s| s.clone()).collect())
+                }
+                "#index" => {
+                    let source_v = self.get("$source", source).await?;
+                    let index_v = self.get("$index", source).await?;
+
+                    let index = index_v.first().unwrap().parse::<usize>().unwrap();
+
+                    Ok(vec![source_v[index].clone()])
+                }
+                _ => self.global_cm.call(class, source).await,
             }
         })
     }

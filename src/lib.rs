@@ -4,6 +4,8 @@ use std::{
     pin::Pin,
 };
 
+use util::{executor::ClassExecutor, rs_2_str};
+
 pub mod err;
 pub mod util;
 
@@ -45,6 +47,28 @@ pub trait AsClassManager: AsSendSyncOption {
         'a: 'f,
         'a1: 'f,
         'a2: 'f;
+
+    fn call<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        class: &'a1 str,
+        source: &'a2 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+        Self: Sized,
+    {
+        Box::pin(async move {
+            let script_v = self.get("script", class).await?;
+
+            let mut ce = ClassExecutor::new(self);
+
+            ce.append("$source", "", vec![source.to_string()]).await?;
+
+            ce.execute_script(&rs_2_str(&script_v)).await
+        })
+    }
 
     fn get_source<'a, 'a1, 'a2, 'f>(
         &'a self,
