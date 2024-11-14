@@ -94,7 +94,7 @@ impl AsClassManager for SqliteClassManager {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,
-        source_v: &'a2 [String],
+        source: &'a2 str,
     ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
@@ -104,19 +104,17 @@ impl AsClassManager for SqliteClassManager {
         Box::pin(async move {
             let mut arr = vec![];
 
-            for source in source_v {
-                let rs = sqlx::query(&format!(
-                    "SELECT target FROM class_t WHERE class=? AND source = ? ORDER BY id"
-                ))
-                .bind(class)
-                .bind(source)
-                .fetch_all(&self.pool)
-                .await
-                .change_context(moon_class::err::Error::RuntimeError)?;
+            let rs = sqlx::query(&format!(
+                "SELECT target FROM class_t WHERE class=? AND source = ? ORDER BY id"
+            ))
+            .bind(class)
+            .bind(source)
+            .fetch_all(&self.pool)
+            .await
+            .change_context(moon_class::err::Error::RuntimeError)?;
 
-                for row in rs {
-                    arr.push(row.get(0));
-                }
+            for row in rs {
+                arr.push(row.get(0));
             }
 
             Ok(arr)

@@ -41,7 +41,7 @@ pub trait AsClassManager: AsSendSyncOption {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,
-        source_v: &'a2 [String],
+        source: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
@@ -51,7 +51,7 @@ pub trait AsClassManager: AsSendSyncOption {
     fn call<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 str,
-        source_v: &'a2 [String],
+        source: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
@@ -60,11 +60,11 @@ pub trait AsClassManager: AsSendSyncOption {
         Self: Sized,
     {
         Box::pin(async move {
-            let script_v = self.get("script", &vec![class.to_string()]).await?;
+            let script_v = self.get("script", class).await?;
 
             let mut ce = ClassExecutor::new(self);
 
-            ce.append("$source", "", source_v.to_vec()).await?;
+            ce.append("$source", "", vec![source.to_string()]).await?;
 
             ce.execute_script(&rs_2_str(&script_v)).await
         })
@@ -128,36 +128,26 @@ impl ClassManager {
         }
     }
 
-    pub fn dump(&self, source_v: &[String]) -> json::JsonValue {
-        let mut arr = json::array![];
+    pub fn dump(&self, source: &str) -> json::JsonValue {
+        if let Some(set) = self.source_inx.get(source) {
+            let mut obj = json::object! {};
 
-        for source in source_v {
-            if let Some(set) = self.source_inx.get(source) {
-                let mut obj = json::object! {};
+            for id in set {
+                let item = self.class_mp.get(id).unwrap();
 
-                for id in set {
-                    let item = self.class_mp.get(id).unwrap();
+                log::debug!("dump: {source}->{}: {}", item.class, item.target);
 
-                    log::debug!("dump: {source}->{}: {}", item.class, item.target);
-
-                    if let json::JsonValue::Array(vec) = &mut obj[&item.class] {
-                        if let json::JsonValue::Array(arr) =
-                            self.dump(&vec![item.target.to_string()])
-                        {
-                            vec.extend(arr);
-                        }
-                    } else {
-                        obj[&item.class] = self.dump(&vec![item.target.to_string()]);
-                    }
+                if let json::JsonValue::Array(vec) = &mut obj[&item.class] {
+                    vec.push(self.dump(&item.target));
+                } else {
+                    obj[&item.class] = json::array![self.dump(&item.target)];
                 }
-
-                let _ = arr.push(obj);
-            } else {
-                let _ = arr.push(json::JsonValue::String(source.to_string()));
             }
-        }
 
-        arr
+            obj
+        } else {
+            json::JsonValue::String(source.to_string())
+        }
     }
 }
 
@@ -266,7 +256,7 @@ impl AsClassManager for ClassManager {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
         class: &'a1 str,
-        source_v: &'a2 [String],
+        source: &'a2 str,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
@@ -276,15 +266,13 @@ impl AsClassManager for ClassManager {
         Box::pin(async move {
             let mut rs = vec![];
 
-            for source in source_v {
-                let class_source_k = (class.to_string(), source.to_string());
+            let class_source_k = (class.to_string(), source.to_string());
 
-                if let Some(set) = self.class_source_inx.get(&class_source_k) {
-                    rs.extend(
-                        set.iter()
-                            .map(|id| self.class_mp.get(id).unwrap().target.clone()),
-                    );
-                }
+            if let Some(set) = self.class_source_inx.get(&class_source_k) {
+                rs.extend(
+                    set.iter()
+                        .map(|id| self.class_mp.get(id).unwrap().target.clone()),
+                );
             }
 
             Ok(rs)
