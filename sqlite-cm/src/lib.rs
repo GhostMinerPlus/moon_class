@@ -14,7 +14,8 @@ CREATE TABLE class_t (
 );
 
 CREATE INDEX class_t_class_source ON class_t (class, source);
-CREATE INDEX class_t_target_IDX ON class_t (target,class);";
+CREATE INDEX class_t_target_IDX ON class_t (target,class);
+CREATE INDEX class_t_class_source_target ON class_t (class, source, target);";
 
 pub struct SqliteClassManager {
     pool: Pool<Sqlite>,
@@ -71,10 +72,11 @@ impl SqliteClassManager {
 }
 
 impl AsClassManager for SqliteClassManager {
-    fn clear<'a, 'a1, 'a2, 'f>(
+    fn remove<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 str,
         source: &'a2 str,
+        target_v: Vec<String>,
     ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -82,12 +84,17 @@ impl AsClassManager for SqliteClassManager {
         'a2: 'f,
     {
         Box::pin(async move {
-            sqlx::query(&format!("DELETE FROM class_t WHERE class=? AND source = ?"))
+            for target in &target_v {
+                sqlx::query(&format!(
+                    "DELETE FROM class_t WHERE class=? AND source=? AND target=?"
+                ))
                 .bind(class)
                 .bind(source)
+                .bind(target)
                 .execute(&self.pool)
                 .await
                 .change_context(moon_class::err::Error::RuntimeError)?;
+            }
 
             Ok(())
         })
@@ -146,7 +153,7 @@ impl AsClassManager for SqliteClassManager {
                     let mut arr = vec![];
 
                     let rs = sqlx::query(&format!(
-                        "SELECT target FROM class_t WHERE class=? AND source = ? ORDER BY id"
+                        "SELECT target FROM class_t WHERE class=? AND source =? ORDER BY id"
                     ))
                     .bind(class)
                     .bind(source)

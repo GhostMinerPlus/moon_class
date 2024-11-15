@@ -1,6 +1,5 @@
 use std::{collections::HashSet, pin::Pin};
 
-use error_stack::ResultExt;
 use inc::inc_v_from_str;
 
 use crate::{err, AsClassManager, AsSendSyncOption, ClassManager, Fu};
@@ -225,7 +224,12 @@ mod inner {
                                     .await?;
 
                             if s.starts_with('@') {
-                                ce.clear(key.first().unwrap(), &root).await?;
+                                ce.remove(
+                                    key.first().unwrap(),
+                                    &root,
+                                    ce.get(key.first().unwrap(), &root).await?,
+                                )
+                                .await?;
                             }
 
                             ce.append(key.first().unwrap(), &root, value_v).await?;
@@ -281,10 +285,18 @@ mod inner {
                             }
                         }
                     }
+                    inc::Opt::Remove => {
+                        for class in &class_v {
+                            for source in &source_v {
+                                ce.remove(class, source, target_v.clone()).await?;
+                            }
+                        }
+                    }
                     inc::Opt::Set => {
                         for class in &class_v {
                             for source in &source_v {
-                                ce.clear(class, source).await?;
+                                ce.remove(class, source, ce.get(class, source).await?)
+                                    .await?;
 
                                 ce.append(class, source, target_v.clone()).await?;
                             }
@@ -399,223 +411,222 @@ where
         Box::pin(async move {
             if class.starts_with('$') {
                 self.temp_ref().get(class, source).await
-            } else {
-                if class.starts_with('#') {
-                    match class {
-                        "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
-                        "#dump" => {
-                            let rj = self.temp_ref().dump(source);
+            } else if class.starts_with('#') {
+                match class {
+                    "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
+                    "#dump" => {
+                        let rj = self.temp_ref().dump(source);
 
-                            Ok(str_2_rs(&rj.to_string()))
-                        }
-                        "#inner" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
+                        Ok(str_2_rs(&rj.to_string()))
+                    }
+                    "#inner" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
 
-                            let mut left_set = HashSet::new();
+                        let mut left_set = HashSet::new();
 
-                            left_set.extend(left_v);
+                        left_set.extend(left_v);
 
-                            let mut rs = vec![];
+                        let mut rs = vec![];
 
-                            for right_item in right_v {
-                                if left_set.contains(&right_item) {
-                                    rs.push(right_item);
-                                }
-                            }
-
-                            Ok(rs)
-                        }
-                        "#if" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
-
-                            if left_v.is_empty() {
-                                Ok(right_v)
-                            } else {
-                                Ok(left_v)
+                        for right_item in right_v {
+                            if left_set.contains(&right_item) {
+                                rs.push(right_item);
                             }
                         }
-                        "#left" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
 
-                            let mut left_set = HashSet::new();
+                        Ok(rs)
+                    }
+                    "#if" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
 
-                            left_set.extend(left_v);
-
-                            for right_item in &right_v {
-                                left_set.remove(right_item);
-                            }
-
-                            Ok(left_set.into_iter().collect())
+                        if left_v.is_empty() {
+                            Ok(right_v)
+                        } else {
+                            Ok(left_v)
                         }
-                        "#slice" => {
-                            let source_v = self.get("$source", source).await?;
-                            let from_v = self.get("$from", source).await?;
-                            let to_v = self.get("$to", source).await?;
+                    }
+                    "#left" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
 
-                            let from = match from_v.first() {
-                                Some(s) => s.parse().unwrap(),
-                                None => 0,
-                            };
-                            let to = match to_v.first() {
-                                Some(s) => s.parse().unwrap(),
-                                None => source_v.len(),
-                            };
+                        let mut left_set = HashSet::new();
 
-                            Ok(source_v[from..to].iter().map(|s| s.clone()).collect())
+                        left_set.extend(left_v);
+
+                        for right_item in &right_v {
+                            left_set.remove(right_item);
                         }
-                        "#index" => {
-                            let source_v = self.get("$source", source).await?;
-                            let index_v = self.get("$index", source).await?;
 
-                            let index = index_v.first().unwrap().parse::<usize>().unwrap();
+                        Ok(left_set.into_iter().collect())
+                    }
+                    "#slice" => {
+                        let source_v = self.get("$source", source).await?;
+                        let from_v = self.get("$from", source).await?;
+                        let to_v = self.get("$to", source).await?;
 
-                            Ok(vec![source_v[index].clone()])
+                        let from = match from_v.first() {
+                            Some(s) => s.parse().unwrap(),
+                            None => 0,
+                        };
+                        let to = match to_v.first() {
+                            Some(s) => s.parse().unwrap(),
+                            None => source_v.len(),
+                        };
+
+                        Ok(source_v[from..to].iter().map(|s| s.clone()).collect())
+                    }
+                    "#index" => {
+                        let source_v = self.get("$source", source).await?;
+                        let index_v = self.get("$index", source).await?;
+
+                        let index = index_v.first().unwrap().parse::<usize>().unwrap();
+
+                        Ok(vec![source_v[index].clone()])
+                    }
+                    "#count" => {
+                        let source_v = self.get("$source", source).await?;
+
+                        Ok(vec![source_v.len().to_string()])
+                    }
+                    "#not" => {
+                        let source_v = self.get("$source", source).await?;
+
+                        let mut rs = vec![];
+
+                        if source_v.is_empty() {
+                            rs.push("1".to_string());
                         }
-                        "#count" => {
-                            let source_v = self.get("$source", source).await?;
 
-                            Ok(vec![source_v.len().to_string()])
-                        }
-                        "#not" => {
-                            let source_v = self.get("$source", source).await?;
+                        Ok(rs)
+                    }
+                    "#source" => {
+                        let class_v = self.get("$class", source).await?;
 
-                            let mut rs = vec![];
-
-                            if source_v.is_empty() {
-                                rs.push("1".to_string());
-                            }
-
-                            Ok(rs)
-                        }
-                        "#source" => {
+                        if class_v[0].starts_with('$') {
+                            let target_v = self.get("$target", source).await?;
                             let class_v = self.get("$class", source).await?;
 
-                            if class_v[0].starts_with('$') {
-                                let target_v = self.get("$target", source).await?;
-                                let class_v = self.get("$class", source).await?;
+                            self.temp_ref().get_source(&target_v[0], &class_v[0]).await
+                        } else {
+                            let data = self.temp_ref().dump(source);
 
-                                self.temp_ref().get_source(&target_v[0], &class_v[0]).await
-                            } else {
-                                let data = self.temp_ref().dump(source);
-
-                                self.global_ref().get(class, &data.to_string()).await
-                            }
-                        }
-                        _ => {
-                            let script_v = self.get("script", class).await?;
-
-                            if !script_v.is_empty() {
-                                let mut ce = ReadOnlyClassExecutor::new(self.global_ref());
-
-                                ce.append("$source", "", vec![source.to_string()]).await?;
-
-                                ce.execute_script(&rs_2_str(&script_v)).await
-                            } else {
-                                self.global_ref().get(class, source).await
-                            }
+                            self.global_ref().get(class, &data.to_string()).await
                         }
                     }
-                } else {
-                    match class {
-                        "+" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
+                    _ => {
+                        let script_v = self.get("onget", class).await?;
 
-                            let sz = left_v.len();
+                        if !script_v.is_empty() {
+                            let mut ce = ReadOnlyClassExecutor::new(self.global_ref());
 
-                            let mut rs = vec![];
+                            ce.append("$source", "", vec![source.to_string()]).await?;
 
-                            for i in 0..sz {
-                                let left = left_v[i].parse::<f64>().unwrap();
-                                let right = right_v[i].parse::<f64>().unwrap();
-
-                                rs.push((left + right).to_string());
-                            }
-
-                            Ok(rs)
+                            ce.execute_script(&rs_2_str(&script_v)).await
+                        } else {
+                            self.global_ref().get(class, source).await
                         }
-                        "-" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
-
-                            let sz = left_v.len();
-
-                            let mut rs = vec![];
-
-                            for i in 0..sz {
-                                let left = left_v[i].parse::<f64>().unwrap();
-                                let right = right_v[i].parse::<f64>().unwrap();
-
-                                rs.push((left - right).to_string());
-                            }
-
-                            Ok(rs)
-                        }
-                        "*" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
-
-                            let sz = left_v.len();
-
-                            let mut rs = vec![];
-
-                            for i in 0..sz {
-                                let left = left_v[i].parse::<f64>().unwrap();
-                                let right = right_v[i].parse::<f64>().unwrap();
-
-                                rs.push((left * right).to_string());
-                            }
-
-                            Ok(rs)
-                        }
-                        "/" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
-
-                            let sz = left_v.len();
-
-                            let mut rs = vec![];
-
-                            for i in 0..sz {
-                                let left = left_v[i].parse::<f64>().unwrap();
-                                let right = right_v[i].parse::<f64>().unwrap();
-
-                                rs.push((left / right).to_string());
-                            }
-
-                            Ok(rs)
-                        }
-                        "%" => {
-                            let left_v = self.get("$left", source).await?;
-                            let right_v = self.get("$right", source).await?;
-
-                            let sz = left_v.len();
-
-                            let mut rs = vec![];
-
-                            for i in 0..sz {
-                                let left = left_v[i].parse::<i32>().unwrap();
-                                let right = right_v[i].parse::<i32>().unwrap();
-
-                                rs.push((left % right).to_string());
-                            }
-
-                            Ok(rs)
-                        }
-                        _ => self.global_ref().get(class, source).await,
                     }
+                }
+            } else {
+                match class {
+                    "+" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let sz = left_v.len();
+
+                        let mut rs = vec![];
+
+                        for i in 0..sz {
+                            let left = left_v[i].parse::<f64>().unwrap();
+                            let right = right_v[i].parse::<f64>().unwrap();
+
+                            rs.push((left + right).to_string());
+                        }
+
+                        Ok(rs)
+                    }
+                    "-" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let sz = left_v.len();
+
+                        let mut rs = vec![];
+
+                        for i in 0..sz {
+                            let left = left_v[i].parse::<f64>().unwrap();
+                            let right = right_v[i].parse::<f64>().unwrap();
+
+                            rs.push((left - right).to_string());
+                        }
+
+                        Ok(rs)
+                    }
+                    "*" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let sz = left_v.len();
+
+                        let mut rs = vec![];
+
+                        for i in 0..sz {
+                            let left = left_v[i].parse::<f64>().unwrap();
+                            let right = right_v[i].parse::<f64>().unwrap();
+
+                            rs.push((left * right).to_string());
+                        }
+
+                        Ok(rs)
+                    }
+                    "/" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let sz = left_v.len();
+
+                        let mut rs = vec![];
+
+                        for i in 0..sz {
+                            let left = left_v[i].parse::<f64>().unwrap();
+                            let right = right_v[i].parse::<f64>().unwrap();
+
+                            rs.push((left / right).to_string());
+                        }
+
+                        Ok(rs)
+                    }
+                    "%" => {
+                        let left_v = self.get("$left", source).await?;
+                        let right_v = self.get("$right", source).await?;
+
+                        let sz = left_v.len();
+
+                        let mut rs = vec![];
+
+                        for i in 0..sz {
+                            let left = left_v[i].parse::<i32>().unwrap();
+                            let right = right_v[i].parse::<i32>().unwrap();
+
+                            rs.push((left % right).to_string());
+                        }
+
+                        Ok(rs)
+                    }
+                    _ => self.global_ref().get(class, source).await,
                 }
             }
         })
     }
 
-    fn clear<'a, 'a1, 'a2, 'f>(
+    fn remove<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 str,
         source: &'a2 str,
+        target_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -623,16 +634,31 @@ where
         'a2: 'f,
     {
         Box::pin(async move {
-            if class.starts_with('#') {
-                return Err(err::Error::RuntimeError).attach_printable_lazy(|| {
-                    format!("try to set {class} which starts with '#'!")
-                });
-            }
-
             if class.starts_with('$') {
-                self.temp_mut().clear(class, source).await
+                self.temp_mut().remove(class, source, target_v).await
+            } else if class.starts_with('#') {
+                let script_v = self.get("onremove", class).await?;
+
+                if !script_v.is_empty() {
+                    let mut ce = ClassExecutor::new(self.global_mut().unwrap());
+
+                    ce.append("$source", "", vec![source.to_string()]).await?;
+                    ce.append("$target", "", target_v).await?;
+
+                    ce.execute_script(&rs_2_str(&script_v)).await?;
+
+                    Ok(())
+                } else {
+                    self.global_mut()
+                        .unwrap()
+                        .remove(class, source, target_v)
+                        .await
+                }
             } else {
-                self.global_mut().unwrap().clear(class, source).await
+                self.global_mut()
+                    .unwrap()
+                    .remove(class, source, target_v)
+                    .await
             }
         })
     }
@@ -649,19 +675,11 @@ where
         'a2: 'f,
     {
         Box::pin(async move {
-            log::debug!("append: {:?} = {class}({source})", target_v);
-
-            if class.starts_with('#') {
-                return Err(err::Error::RuntimeError).attach_printable_lazy(|| {
-                    format!("try to append {class} which starts with '#'!")
-                });
-            }
-
             if class.starts_with('$') {
                 self.temp_mut().append(class, source, target_v).await
-            } else if class.starts_with('@') {
+            } else if class.starts_with('#') {
                 match class {
-                    "@switch" => {
+                    "#switch" => {
                         for target in &target_v {
                             let case_v = self.get("$case", target).await?;
 
@@ -679,7 +697,7 @@ where
 
                         Ok(())
                     }
-                    "@loop" => {
+                    "#loop" => {
                         let inc_v = inc_v_from_str(&rs_2_str(&target_v))?;
 
                         while !inner::execute(self, &inc_v).await?.is_empty() {}
@@ -687,7 +705,7 @@ where
                         Ok(())
                     }
                     _ => {
-                        let script_v = self.get("script", class).await?;
+                        let script_v = self.get("onappend", class).await?;
 
                         if !script_v.is_empty() {
                             let mut ce = ClassExecutor::new(self.global_mut().unwrap());
@@ -876,8 +894,8 @@ mod tests {
             $then: <$() := $result();>
         },
         @{$case: <1 := $result();>}
-    ] = @switch();
-> = @loop();
+    ] = #switch();
+> = #loop();
 
 $sum() := $result();
              "#,

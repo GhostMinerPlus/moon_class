@@ -118,6 +118,7 @@ impl Display for IncVal {
 pub enum Opt {
     Append,
     Set,
+    Remove,
 }
 
 impl Display for Opt {
@@ -125,6 +126,7 @@ impl Display for Opt {
         match self {
             Opt::Append => write!(f, "="),
             Opt::Set => write!(f, ":="),
+            Opt::Remove => write!(f, "-="),
         }
     }
 }
@@ -167,6 +169,12 @@ impl Inc {
 
                 target_op = Some(IncVal::from_str(s[..pos].trim())?);
                 operator_op = Some(Opt::Set);
+
+                pos += 1;
+                break;
+            } else if s[pos..].starts_with("-=") {
+                target_op = Some(IncVal::from_str(s[..pos].trim())?);
+                operator_op = Some(Opt::Remove);
 
                 pos += 1;
                 break;

@@ -46,10 +46,11 @@ pub trait AsClassManager: AsSendSyncOption {
         'a1: 'f,
         'a2: 'f;
 
-    fn clear<'a, 'a1, 'a2, 'f>(
+    fn remove<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 str,
         source: &'a2 str,
+        target_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -141,10 +142,11 @@ impl ClassManager {
 }
 
 impl AsClassManager for ClassManager {
-    fn clear<'a, 'a1, 'a2, 'f>(
+    fn remove<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 str,
         source: &'a2 str,
+        target_v: Vec<String>,
     ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
@@ -152,11 +154,30 @@ impl AsClassManager for ClassManager {
         'a2: 'f,
     {
         Box::pin(async move {
-            if let Some(set) = self
-                .class_source_inx
-                .remove(&(class.to_string(), source.to_string()))
-            {
-                for id in set {
+            let mut target_set = BTreeSet::new();
+
+            target_set.extend(target_v);
+
+            let class_source_k = (class.to_string(), source.to_string());
+
+            if let Some(set) = self.class_source_inx.get_mut(&class_source_k) {
+                let id_v = set
+                    .iter()
+                    .filter(|id| {
+                        if let Some(item_class) = self.class_mp.get(&id) {
+                            if target_set.remove(&item_class.target) {
+                                return true;
+                            }
+                        }
+
+                        false
+                    })
+                    .map(|id| *id)
+                    .collect::<Vec<u64>>();
+
+                for id in &id_v {
+                    set.remove(id);
+
                     if let Some(item_class) = self.class_mp.remove(&id) {
                         if let Some(set) = self
                             .target_class_inx
