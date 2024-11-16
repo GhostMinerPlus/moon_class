@@ -165,7 +165,7 @@ impl AsClassManager for ClassManager {
                     .iter()
                     .filter(|id| {
                         if let Some(item_class) = self.class_mp.get(&id) {
-                            if target_set.remove(&item_class.target) {
+                            if target_set.contains(&item_class.target) {
                                 return true;
                             }
                         }
