@@ -483,7 +483,10 @@ where
 
                         let index = index_v.first().unwrap().parse::<usize>().unwrap();
 
-                        Ok(vec![source_v[index].clone()])
+                        Ok(match source_v.get(index) {
+                            Some(rs) => vec![rs.clone()],
+                            None => vec![],
+                        })
                     }
                     "#count" => {
                         let source_v = self.get("$source", source).await?;
