@@ -511,7 +511,10 @@ where
                             let target_v = self.get("$target", source).await?;
                             let class_v = self.get("$class", source).await?;
 
-                            self.temp_ref().get_source(&target_v[0], &class_v[0]).await
+                            Ok(self
+                                .temp_ref()
+                                .get_source(&target_v[0], &class_v[0])
+                                .unwrap_or_default())
                         } else {
                             let data = self.temp_ref().dump(source);
 

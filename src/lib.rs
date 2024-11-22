@@ -117,27 +117,31 @@ impl ClassManager {
         }
     }
 
-    pub fn get_source<'a, 'a1, 'a2, 'f>(
-        &'a self,
-        target: &'a1 str,
-        class: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            let target_class_k = (target.to_string(), class.to_string());
+    pub fn get_source(&self, target: &str, class: &str) -> Option<Vec<String>> {
+        let target_class_k = (target.to_string(), class.to_string());
 
-            match self.target_class_inx.get(&target_class_k) {
-                Some(set) => Ok(set
-                    .iter()
+        match self.target_class_inx.get(&target_class_k) {
+            Some(set) => Some(
+                set.iter()
+                    .map(|id| self.class_mp.get(id).unwrap().source.clone())
+                    .collect(),
+            ),
+            None => None,
+        }
+    }
+
+    pub fn get_target(&self, class: &str, source: &str) -> Option<Vec<String>> {
+        let class_source_k = (class.to_string(), source.to_string());
+
+        if let Some(set) = self.class_source_inx.get(&class_source_k) {
+            Some(
+                set.iter()
                     .map(|id| self.class_mp.get(id).unwrap().target.clone())
-                    .collect()),
-                None => Ok(vec![]),
-            }
-        })
+                    .collect(),
+            )
+        } else {
+            None
+        }
     }
 }
 
@@ -274,18 +278,19 @@ impl AsClassManager for ClassManager {
         'a2: 'f,
     {
         Box::pin(async move {
-            let mut rs = vec![];
+            match class {
+                "#source" => {
+                    let data = json::parse(source).unwrap();
 
-            let class_source_k = (class.to_string(), source.to_string());
-
-            if let Some(set) = self.class_source_inx.get(&class_source_k) {
-                rs.extend(
-                    set.iter()
-                        .map(|id| self.class_mp.get(id).unwrap().target.clone()),
-                );
+                    Ok(self
+                        .get_source(
+                            data["$target"][0].as_str().unwrap(),
+                            data["$class"][0].as_str().unwrap(),
+                        )
+                        .unwrap_or_default())
+                }
+                _ => Ok(self.get_target(class, source).unwrap_or_default()),
             }
-
-            Ok(rs)
         })
     }
 }
