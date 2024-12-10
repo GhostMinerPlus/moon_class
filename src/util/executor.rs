@@ -7,25 +7,17 @@ use crate::{err, AsClassManager, AsSendSyncOption, ClassManager, Fu};
 use super::{rs_2_str, str_2_rs};
 
 mod string;
+mod value_extractor;
 mod inner {
     use std::pin::Pin;
 
-    use error_stack::ResultExt;
+    use crate::{err, util::executor::inc, AsClassManager, Fu};
 
-    use crate::{
-        err,
-        util::executor::{
-            inc,
-            string::{find_angle_end, find_string_end},
-        },
-        AsClassManager, Fu,
-    };
-
-    use super::inc::{Inc, IncVal};
+    use super::*;
 
     pub fn unwrap_value<'a, 'a1, 'f, CM>(
         ce: &'a mut CM,
-        inc_val: &'a1 IncVal,
+        inc_val: &'a1 inc::IncVal,
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
@@ -34,216 +26,10 @@ mod inner {
     {
         Box::pin(async move {
             match inc_val {
-                IncVal::Object(s) => {
-                    if s.starts_with('[') {
-                        let mut obj_s_v = vec![];
-                        let mut pos = 1;
-                        let mut start = pos;
-
-                        while pos < s.len() {
-                            if s[pos..].starts_with(',') {
-                                obj_s_v.push(s[start..pos].trim());
-
-                                start = pos + 1;
-                            } else if s[pos..].starts_with(']') {
-                                let last = s[start..pos].trim();
-
-                                if !last.is_empty() {
-                                    obj_s_v.push(last);
-                                }
-
-                                break;
-                            } else if s[pos..].starts_with('[') {
-                                pos += 1 + find_angle_end(&s[pos + 1..], "[", "]")?
-                                    .ok_or(err::Error::SyntaxError)
-                                    .attach_printable_lazy(|| {
-                                        format!("{}: expected '[', but not found!", &s[pos..])
-                                    })?;
-                            } else if s[pos..].starts_with('{') {
-                                pos += 1 + find_angle_end(&s[pos + 1..], "{", "}")?
-                                    .ok_or(err::Error::SyntaxError)
-                                    .attach_printable_lazy(|| {
-                                        format!("{}: expected '{{', but not found!", &s[pos..])
-                                    })?;
-                            } else if s[pos..].starts_with('\"') {
-                                pos += 1 + match find_string_end(&s[pos + 1..]) {
-                                    Some(end) => end,
-                                    None => {
-                                        return Err(err::Error::SyntaxError).attach_printable_lazy(
-                                            || {
-                                                format!(
-                                                    "{}: expected '\"', but not found!",
-                                                    &s[pos..]
-                                                )
-                                            },
-                                        );
-                                    }
-                                };
-                            } else if s[pos..].starts_with('<') {
-                                pos += 1 + find_angle_end(&s[pos + 1..], "<", ">")?
-                                    .ok_or(err::Error::SyntaxError)
-                                    .attach_printable_lazy(|| {
-                                        format!("{}: expected '>', but not found!", &s[pos..])
-                                    })?;
-                            }
-
-                            pos += 1;
-                        }
-
-                        let iv_res_v = obj_s_v
-                            .iter()
-                            .map(|s| IncVal::from_str(s))
-                            .collect::<Vec<err::Result<IncVal>>>();
-
-                        let mut rs = Vec::with_capacity(iv_res_v.len());
-
-                        for iv in iv_res_v {
-                            rs.extend(unwrap_value(ce, &iv?).await?);
-                        }
-
-                        Ok(rs)
-                    } else if s.ends_with('}') {
-                        let (mut pos, root) = if s.starts_with('@') {
-                            let pos = s.find('{').unwrap() + 1;
-                            let root = s[1..pos - 1].to_string();
-
-                            log::debug!("unwrap_value: root = {root}");
-
-                            (pos, root)
-                        } else {
-                            (1, uuid::Uuid::new_v4().to_string())
-                        };
-                        let mut entry_v = vec![];
-                        let mut start = pos;
-
-                        while pos < s.len() {
-                            if s[pos..].starts_with(',') {
-                                entry_v.push(s[start..pos].trim());
-
-                                start = pos + 1;
-                            } else if s[pos..].starts_with('}') {
-                                let last = s[start..pos].trim();
-
-                                if !last.is_empty() {
-                                    entry_v.push(last);
-                                }
-
-                                break;
-                            } else if s[pos..].starts_with('[') {
-                                pos += 1 + find_angle_end(&s[pos + 1..], "[", "]")?
-                                    .ok_or(err::Error::SyntaxError)
-                                    .attach_printable_lazy(|| {
-                                        format!("{}: expected '[', but not found!", &s[pos..])
-                                    })?;
-                            } else if s[pos..].starts_with('{') {
-                                pos += 1 + find_angle_end(&s[pos + 1..], "{", "}")?
-                                    .ok_or(err::Error::SyntaxError)
-                                    .attach_printable_lazy(|| {
-                                        format!("{}: expected '{{', but not found!", &s[pos..])
-                                    })?;
-                            } else if s[pos..].starts_with('\"') {
-                                pos += 1 + match find_string_end(&s[pos + 1..]) {
-                                    Some(end) => end,
-                                    None => {
-                                        return Err(err::Error::SyntaxError).attach_printable_lazy(
-                                            || {
-                                                format!(
-                                                    "{}: expected '\"', but not found!",
-                                                    &s[pos..]
-                                                )
-                                            },
-                                        );
-                                    }
-                                };
-                            } else if s[pos..].starts_with('<') {
-                                pos += 1 + find_angle_end(&s[pos + 1..], "<", ">")?
-                                    .ok_or(err::Error::SyntaxError)
-                                    .attach_printable_lazy(|| {
-                                        format!("{}: expected '>', but not found!", &s[pos..])
-                                    })?;
-                            }
-
-                            pos += 1;
-                        }
-
-                        for entry in entry_v {
-                            let mut pos = 0;
-
-                            while pos < entry.len() {
-                                if entry[pos..].starts_with(':') {
-                                    break;
-                                } else if entry[pos..].starts_with('[') {
-                                    pos += 1 + find_angle_end(&entry[pos + 1..], "[", "]")?
-                                        .ok_or(err::Error::SyntaxError)
-                                        .attach_printable_lazy(|| {
-                                            format!(
-                                                "{}: expected '[', but not found!",
-                                                &entry[pos..]
-                                            )
-                                        })?;
-                                } else if entry[pos..].starts_with('{') {
-                                    pos += 1 + find_angle_end(&entry[pos + 1..], "{", "}")?
-                                        .ok_or(err::Error::SyntaxError)
-                                        .attach_printable_lazy(|| {
-                                            format!(
-                                                "{}: expected '{{', but not found!",
-                                                &entry[pos..]
-                                            )
-                                        })?;
-                                } else if entry[pos..].starts_with('\"') {
-                                    pos += 1 + match find_string_end(&entry[pos + 1..]) {
-                                        Some(end) => end,
-                                        None => {
-                                            return Err(err::Error::SyntaxError)
-                                                .attach_printable_lazy(|| {
-                                                    format!(
-                                                        "{}: expected '\"', but not found!",
-                                                        &entry[pos..]
-                                                    )
-                                                });
-                                        }
-                                    };
-                                } else if entry[pos..].starts_with('<') {
-                                    pos += 1 + find_angle_end(&entry[pos + 1..], "<", ">")?
-                                        .ok_or(err::Error::SyntaxError)
-                                        .attach_printable_lazy(|| {
-                                            format!(
-                                                "{}: expected '>', but not found!",
-                                                &entry[pos..]
-                                            )
-                                        })?;
-                                }
-
-                                pos += 1;
-                            }
-
-                            let key =
-                                unwrap_value(ce, &IncVal::from_str(entry[0..pos].trim())?).await?;
-                            let value_v =
-                                unwrap_value(ce, &IncVal::from_str(entry[pos + 1..].trim())?)
-                                    .await?;
-
-                            if s.starts_with('@') {
-                                ce.remove(
-                                    key.first().unwrap(),
-                                    &root,
-                                    ce.get(key.first().unwrap(), &root).await?,
-                                )
-                                .await?;
-                            }
-
-                            ce.append(key.first().unwrap(), &root, value_v).await?;
-                        }
-
-                        Ok(vec![root])
-                    } else {
-                        Err(err::Error::SyntaxError)
-                            .attach_printable_lazy(|| format!("{s} not a object!"))
-                    }
-                }
-                IncVal::Script(v) => Ok(vec![v.clone()]),
-                IncVal::Value(v) => Ok(vec![v.clone()]),
-                IncVal::Addr((class, source)) => {
+                inc::IncVal::Object(s) => value_extractor::object(ce, s).await,
+                inc::IncVal::Script(v) => value_extractor::script(ce, v).await,
+                inc::IncVal::Value(v) => Ok(vec![v.clone()]),
+                inc::IncVal::Addr((class, source)) => {
                     let class_v = unwrap_value(ce, class).await?;
                     let source_v = unwrap_value(ce, source).await?;
                     let mut rs = vec![];
@@ -262,7 +48,7 @@ mod inner {
 
     pub fn execute<'a, 'a1, 'f, CM>(
         ce: &'a mut CM,
-        inc_v: &'a1 [Inc],
+        inc_v: &'a1 [inc::Inc],
     ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
@@ -356,6 +142,23 @@ impl<'cm, CM> ClassExecutor<'cm, CM> {
     }
 }
 
+impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
+    pub fn execute_script<'a, 'a1, 'f>(
+        &'a mut self,
+        script: &'a1 str,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        inner::execute_script(self, script)
+    }
+
+    pub fn temp(self) -> ClassManager {
+        self.temp_cm
+    }
+}
+
 impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ClassExecutor<'cm, AsCM> {
     type CM = AsCM;
 
@@ -373,23 +176,6 @@ impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ClassExecutor<'cm, AsCM> 
 
     fn global_mut(&mut self) -> Option<&mut Self::CM> {
         Some(self.global_cm)
-    }
-}
-
-impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
-    pub fn execute_script<'a, 'a1, 'f>(
-        &'a mut self,
-        script: &'a1 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-    {
-        inner::execute_script(self, script)
-    }
-
-    pub fn temp(self) -> ClassManager {
-        self.temp_cm
     }
 }
 
@@ -912,5 +698,36 @@ $sum() := $result();
             assert_eq!(rs.len(), 1);
             assert_eq!(rs[0], "5050");
         })
+    }
+
+    #[test]
+    fn test_template() {
+        let _ =
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+                .is_test(true)
+                .try_init();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let mut cm = ClassManager::new();
+
+            let mut ce = ClassExecutor::new(&mut cm);
+
+            let rs = ce
+                .execute_script(
+                    r#"
+value := $value();
+<${$value()}> := $result();
+            "#,
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(rs[0], "value")
+        });
     }
 }
