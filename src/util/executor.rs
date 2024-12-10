@@ -496,6 +496,16 @@ where
 
                         Ok(())
                     }
+                    "#load" => {
+                        let source_v = self.get("$source", source).await?;
+                        let class_v = self.get("$class", source).await?;
+
+                        let target_v =
+                            inner::unwrap_value(self, &inc::IncVal::Object(target_v[0].clone()))
+                                .await?;
+
+                        self.append(&class_v[0], &source_v[0], target_v).await
+                    }
                     _ => {
                         let script_v = self.get("onappend", class).await?;
 
