@@ -1,0 +1,63 @@
+<
+    div = $class($root);
+    {
+        $onkeypressed: <
+            0.0 = $x($acc);
+            0.0 = $y($acc);
+            0.0 = $z($acc);
+
+            [
+                {
+                    $case: <#inner({ $left: KeyW, $right: $key($data())}) := $result();>,
+                    $then: <-0.1 := $z($acc);>
+                },
+                {
+                    $case: <#inner({ $left: KeyS, $right: $key($data())}) := $result();>,
+                    $then: <0.1 := $z($acc);>
+                },
+                {
+                    $case: <#inner({ $left: KeyA, $right: $key($data())}) := $result();>,
+                    $then: <-0.1 := $x($acc);>
+                },
+                {
+                    $case: <#inner({ $left: KeyD, $right: $key($data())}) := $result();>,
+                    $then: <0.1 := $x($acc);>
+                },
+                {
+                    $case: <#inner({ $left: KeyC, $right: $key($data())}) := $result();>,
+                    $then: <-0.1 := $y($acc);>
+                },
+                {
+                    $case: <#inner({ $left: Space, $right: $key($data())}) := $result();>,
+                    $then: <0.1 := $y($acc);>
+                }
+            ] = #switch();
+
+            #dump($acc) = @new_acc(@camera);
+
+            [] := $result();
+        >,
+        $onmousemove: <
+            #dump({
+                $yaw: $x($data()),
+                $pitch: $y($data()),
+                $roll: 0.0
+            }) = @new_rotation(@camera);
+        >
+    } = $props($root);
+
+    [
+        {
+            $class: Planet,
+            $props: {
+                $position: [0.0, -512.0, 0.0],
+                $radius: 512.0
+            }
+        },
+        {
+            $class: Com:charactor
+        }
+    ] = $child($root);
+
+    $root = $result();
+> = view(Game);

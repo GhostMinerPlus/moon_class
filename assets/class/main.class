@@ -1,0 +1,141 @@
+[
+    "planet.class",
+    "game.class"
+] = #include();
+
+<
+    {
+        $class: div,
+        $props: {
+            $width: 20%
+        },
+        $child: [
+            {
+                $class: Control:button,
+                $props: {
+                    $content: Universe,
+                    $left: 10%,
+                    $top: 10%,
+                    $width: 200px,
+                    $height: 70px,
+                    $onclick: <
+                        @state(${$vnode_id()}) = #load({
+                            $source: "",
+                            $class: $state
+                        });
+
+                        Universe := $table($state());
+
+                        #dump($state()) = @state(${$vnode_id()});
+                    >
+                }
+            },
+            {
+                $class: Control:button,
+                $props: {
+                    $content: Character,
+                    $left: 10%,
+                    $top: 25%,
+                    $width: 200px,
+                    $height: 70px,
+                    $onclick: <
+                        @state(${$vnode_id()}) = #load({
+                            $source: "",
+                            $class: $state
+                        });
+
+                        Character := $table($state());
+
+                        #dump($state()) = @state(${$vnode_id()});
+                    >
+                }
+            },
+            {
+                $class: Control:button,
+                $props: {
+                    $content: Settings,
+                    $left: 10%,
+                    $top: 40%,
+                    $width: 200px,
+                    $height: 70px,
+                    $onclick: <
+                        @state(${$vnode_id()}) = #load({
+                            $source: "",
+                            $class: $state
+                        });
+
+                        Settings := $table($state());
+
+                        #dump($state()) = @state(${$vnode_id()});
+                    >
+                }
+            }
+        ]
+    } = $child($root);
+    [
+        {
+            $case: <
+                #inner({
+                    $left: $table($state()),
+                    $right: Character
+                }) := $result();
+            >,
+            $then: <
+                {
+
+                } = $child($root);
+            >
+        },
+        {
+            $case: <
+                #inner({
+                    $left: $table($state()),
+                    $right: Settings
+                }) := $result();
+            >,
+            $then: <
+                {
+
+                } = $child($root);
+            >
+        },
+        {
+            $case: <1 := $result();>,
+            $then: <
+                {
+                    $source: @universe(),
+                    $mapper: <
+                        {
+                            $class: Control:button,
+                            $props: {
+                                $content: $item(),
+                                $left: 10%,
+                                $top: 40%,
+                                $width: 200px,
+                                $height: 70px
+                            }
+                        } := $result();
+                    >
+                } = #map({
+                    $source: "",
+                    $class: $universe
+                });
+
+                {
+                    $class: div,
+                    $props: {
+                        $left: 20%,
+                        $width: 80%,
+                        $onrightclik: <
+
+                        >
+                    },
+                    $child: $universe()
+                } = $child($root);
+            >
+        }
+    ] = #switch();
+    div = $class($root);
+
+    $root := $result();
+> = view(Main);

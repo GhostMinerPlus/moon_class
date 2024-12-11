@@ -1,0 +1,12 @@
+<
+    bundle = $class($root);
+    {
+        $class: Com:body,
+        $props: {
+            $position: $position($props()),
+            $radius: $radius($props())
+        }
+    } = $child($root);
+
+    $root = $result();
+> = view(Planet);

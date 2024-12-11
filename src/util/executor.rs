@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs, pin::Pin};
+use std::{collections::HashSet, fs, path::Path, pin::Pin};
 
 use inc::inc_v_from_str;
 
@@ -126,11 +126,14 @@ pub trait ClassManagerHolder {
     fn global_ref(&self) -> &Self::CM;
 
     fn global_mut(&mut self) -> Option<&mut Self::CM>;
+
+    fn path_mut(&mut self) -> &mut String;
 }
 
 pub struct ClassExecutor<'cm, CM> {
     global_cm: &'cm mut CM,
     temp_cm: ClassManager,
+    path: String,
 }
 
 impl<'cm, CM> ClassExecutor<'cm, CM> {
@@ -138,6 +141,7 @@ impl<'cm, CM> ClassExecutor<'cm, CM> {
         Self {
             global_cm: global,
             temp_cm: ClassManager::new(),
+            path: ".".to_string(),
         }
     }
 }
@@ -176,6 +180,10 @@ impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ClassExecutor<'cm, AsCM> 
 
     fn global_mut(&mut self) -> Option<&mut Self::CM> {
         Some(self.global_cm)
+    }
+
+    fn path_mut(&mut self) -> &mut String {
+        &mut self.path
     }
 }
 
@@ -540,9 +548,26 @@ where
                     }
                     "#include" => {
                         for target in &target_v {
-                            let script = fs::read_to_string(target).unwrap();
+                            let root = self.path_mut().clone();
+                            let file_path = format!("{root}/{target}");
 
+                            println!("#include: file_path = {file_path}");
+
+                            let file = Path::new(&file_path);
+
+                            let dir = file
+                                .parent()
+                                .as_ref()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string();
+                            let script = fs::read_to_string(file).unwrap();
+
+                            *self.path_mut() = dir;
                             inner::execute_script(self, &script).await?;
+
+                            *self.path_mut() = root;
                         }
 
                         Ok(())
@@ -580,6 +605,7 @@ where
 pub struct ReadOnlyClassExecutor<'cm, CM> {
     global_cm: &'cm CM,
     temp_cm: ClassManager,
+    path: String,
 }
 
 impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
@@ -587,6 +613,7 @@ impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
         Self {
             global_cm: global,
             temp_cm: ClassManager::new(),
+            path: ".".to_string(),
         }
     }
 
@@ -594,6 +621,7 @@ impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
         Self {
             global_cm: global,
             temp_cm,
+            path: ".".to_string(),
         }
     }
 }
@@ -615,6 +643,10 @@ impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ReadOnlyClassExecutor<'cm
 
     fn global_mut(&mut self) -> Option<&mut Self::CM> {
         None
+    }
+
+    fn path_mut(&mut self) -> &mut String {
+        &mut self.path
     }
 }
 
