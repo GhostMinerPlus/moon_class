@@ -1,4 +1,4 @@
-use std::{collections::HashSet, pin::Pin};
+use std::{collections::HashSet, fs, pin::Pin};
 
 use inc::inc_v_from_str;
 
@@ -307,6 +307,9 @@ where
                             self.global_ref().get(class, &data.to_string()).await
                         }
                     }
+                    "#map" => {
+                        todo!()
+                    }
                     _ => {
                         let script_v = self.get("onget", class).await?;
 
@@ -535,6 +538,15 @@ where
 
                         self.append(&class_v[0], &source_v[0], rs).await
                     }
+                    "#include" => {
+                        for target in &target_v {
+                            let script = fs::read_to_string(target).unwrap();
+
+                            inner::execute_script(self, &script).await?;
+                        }
+
+                        Ok(())
+                    }
                     _ => {
                         let script_v = self.get("onappend", class).await?;
 
@@ -575,6 +587,13 @@ impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
         Self {
             global_cm: global,
             temp_cm: ClassManager::new(),
+        }
+    }
+
+    pub fn new_with_temp(global: &'cm CM, temp_cm: ClassManager) -> Self {
+        Self {
+            global_cm: global,
+            temp_cm,
         }
     }
 }
