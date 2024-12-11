@@ -506,6 +506,35 @@ where
 
                         self.append(&class_v[0], &source_v[0], target_v).await
                     }
+                    "#map" => {
+                        log::debug!("#map: target_v = {target_v:?}");
+                        let source_v = self.get("$source", source).await?;
+                        let class_v = self.get("$class", source).await?;
+                        let item_v = self.get("$source", &target_v[0]).await?;
+                        let mapper_v = self.get("$mapper", &target_v[0]).await?;
+
+                        let script = rs_2_str(&mapper_v);
+
+                        log::debug!("#map: script = {mapper_v:?}");
+                        let inc_v = inc_v_from_str(&script)?;
+
+                        let mut rs = Vec::with_capacity(item_v.len());
+                        let mut index = 0;
+
+                        for item in item_v {
+                            self.append("$item", "", vec![item.clone()]).await?;
+                            self.append("$index", "", vec![index.to_string()]).await?;
+
+                            rs.push(inner::execute(self, &inc_v).await?.join("\n"));
+
+                            self.remove("$item", "", vec![item]).await?;
+                            self.remove("$index", "", vec![index.to_string()]).await?;
+
+                            index += 1;
+                        }
+
+                        self.append(&class_v[0], &source_v[0], rs).await
+                    }
                     _ => {
                         let script_v = self.get("onappend", class).await?;
 
