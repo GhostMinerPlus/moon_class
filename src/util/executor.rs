@@ -508,6 +508,10 @@ where
                         Ok(())
                     }
                     "#load" => {
+                        if target_v.is_empty() {
+                            return Ok(());
+                        }
+
                         let source_v = self.get("$source", source).await?;
                         let class_v = self.get("$class", source).await?;
 
