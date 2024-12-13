@@ -5,6 +5,7 @@ pub fn str_of_value(word: &str) -> String {
         .replace("\\", "\\\\")
         .replace("\n", "\\n")
         .replace("\t", "\\t")
+        .replace("\r", "\\r")
         .replace("\"", "\\\"");
 
     format!("\"{content}\"")
@@ -27,6 +28,7 @@ pub fn value_of_str(mut word: &str) -> String {
                     let ch = match ch {
                         "n" => "\n",
                         "t" => "\t",
+                        "r" => "\r",
                         _ => ch,
                     };
                     rs = format!("{rs}{}{ch}", &word[pos..pos + offset]);
