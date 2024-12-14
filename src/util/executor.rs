@@ -488,7 +488,7 @@ where
 
                             if !inner::unwrap_value(
                                 self,
-                                &inc::IncVal::from_str(&rs_2_str(&case_v))?,
+                                &inc::IncVal::from_str(rs_2_str(&case_v).trim())?,
                             )
                             .await?
                             .is_empty()
