@@ -486,9 +486,12 @@ where
                         for target in &target_v {
                             let case_v = self.get("$case", target).await?;
 
-                            if !inner::execute_script(self, &rs_2_str(&case_v))
-                                .await?
-                                .is_empty()
+                            if !inner::unwrap_value(
+                                self,
+                                &inc::IncVal::from_str(&rs_2_str(&case_v))?,
+                            )
+                            .await?
+                            .is_empty()
                             {
                                 let then_v = self.get("$then", target).await?;
 
@@ -776,10 +779,10 @@ mod tests {
 
     [
         @{
-            $case: <#inner(@{$left: 101, $right: $pos()}) := $result();>,
-            $then: <$() := $result();>
+            $case: <#inner(@{$left: 101, $right: $pos()})>,
+            $then: <[] := $result();>
         },
-        @{$case: <1 := $result();>}
+        @{$case: <1>, $then: <1 := $result();>}
     ] = #switch();
 > = #loop();
 
