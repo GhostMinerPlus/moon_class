@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs, path::Path, pin::Pin, sync::Arc};
 use inc::inc_v_from_str;
 use tokio::sync::Mutex;
 
-use crate::{err, AsClassManager, AsSendSyncOption, ClassManager, Fu};
+use crate::{err, AsClassManager, AsSendSyncOption, ClassManager, Fu, AsSetable};
 
 use super::{rs_2_str, str_2_rs};
 
@@ -607,11 +607,9 @@ where
                         Ok(())
                     }
                     "#call" => {
-                        let mut ce = ClassExecutor::new(self.global_mut().unwrap());
+                        self.set("$source", "", vec![source.to_string()]).await?;
 
-                        ce.append("$source", "", vec![source.to_string()]).await?;
-
-                        ce.execute_script(&rs_2_str(&target_v)).await?;
+                        inner::execute_script(self, &rs_2_str(&target_v)).await?;
 
                         Ok(())
                     }
