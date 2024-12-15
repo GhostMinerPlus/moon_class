@@ -1,4 +1,7 @@
-use moon_class::{util::executor::{ClassExecutor, ClassManagerHolder}, ClassManager};
+use moon_class::{
+    util::executor::{ClassExecutor, ClassManagerHolder},
+    ClassManager,
+};
 
 fn main() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
@@ -44,7 +47,7 @@ $temp($) := $result();
 
             println!("rs = {rs:?}");
 
-            ce.temp_ref().dump(&rs[0])
+            ce.dump(&rs[0]).await
         };
 
         println!("rj = {rj}");

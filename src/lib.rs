@@ -69,6 +69,40 @@ pub trait AsClassManager: AsSendSyncOption {
         'a2: 'f;
 }
 
+pub trait AsSetable {
+    fn set<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        class: &'a1 str,
+        source: &'a2 str,
+        target_v: Vec<String>,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f;
+}
+
+impl<T: AsClassManager> AsSetable for T {
+    fn set<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        class: &'a1 str,
+        source: &'a2 str,
+        target_v: Vec<String>,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            self.remove(class, source, self.get(class, source).await?)
+                .await?;
+
+            self.append(class, source, target_v.clone()).await
+        })
+    }
+}
+
 #[allow(unused)]
 pub struct Item {
     class: String,

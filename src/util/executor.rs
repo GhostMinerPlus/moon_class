@@ -1,6 +1,7 @@
-use std::{collections::HashSet, fs, path::Path, pin::Pin};
+use std::{collections::HashSet, fs, path::Path, pin::Pin, sync::Arc};
 
 use inc::inc_v_from_str;
+use tokio::sync::Mutex;
 
 use crate::{err, AsClassManager, AsSendSyncOption, ClassManager, Fu};
 
@@ -11,7 +12,7 @@ mod value_extractor;
 mod inner {
     use std::pin::Pin;
 
-    use crate::{err, util::executor::inc, AsClassManager, Fu};
+    use crate::{err, util::executor::inc, AsClassManager, AsSetable, Fu};
 
     use super::*;
 
@@ -81,10 +82,7 @@ mod inner {
                     inc::Opt::Set => {
                         for class in &class_v {
                             for source in &source_v {
-                                ce.remove(class, source, ce.get(class, source).await?)
-                                    .await?;
-
-                                ce.append(class, source, target_v.clone()).await?;
+                                ce.set(class, source, target_v.clone()).await?;
                             }
                         }
                     }
@@ -119,20 +117,34 @@ pub mod inc;
 pub trait ClassManagerHolder {
     type CM: AsClassManager;
 
-    fn temp_ref(&self) -> &ClassManager;
-
-    fn temp_mut(&mut self) -> &mut ClassManager;
+    fn temp(&self) -> Arc<Mutex<ClassManager>>;
 
     fn global_ref(&self) -> &Self::CM;
 
     fn global_mut(&mut self) -> Option<&mut Self::CM>;
 
     fn path_mut(&mut self) -> &mut String;
+
+    fn dump<'a, 'a1, 'f>(
+        &'a self,
+        source: &'a1 str,
+    ) -> Pin<Box<dyn Fu<Output = json::JsonValue> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        let temp = self.temp().clone();
+        Box::pin(async move {
+            let temp = temp.lock().await;
+
+            temp.dump(source)
+        })
+    }
 }
 
 pub struct ClassExecutor<'cm, CM> {
     global_cm: &'cm mut CM,
-    temp_cm: ClassManager,
+    temp_cm: Arc<Mutex<ClassManager>>,
     path: String,
 }
 
@@ -140,7 +152,15 @@ impl<'cm, CM> ClassExecutor<'cm, CM> {
     pub fn new(global: &'cm mut CM) -> Self {
         Self {
             global_cm: global,
-            temp_cm: ClassManager::new(),
+            temp_cm: Arc::new(Mutex::new(ClassManager::new())),
+            path: ".".to_string(),
+        }
+    }
+
+    pub fn new_with_temp(global: &'cm mut CM, temp_cm: Arc<Mutex<ClassManager>>) -> Self {
+        Self {
+            global_cm: global,
+            temp_cm,
             path: ".".to_string(),
         }
     }
@@ -157,21 +177,13 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
     {
         inner::execute_script(self, script)
     }
-
-    pub fn temp(self) -> ClassManager {
-        self.temp_cm
-    }
 }
 
 impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ClassExecutor<'cm, AsCM> {
     type CM = AsCM;
 
-    fn temp_ref(&self) -> &ClassManager {
-        &self.temp_cm
-    }
-
-    fn temp_mut(&mut self) -> &mut ClassManager {
-        &mut self.temp_cm
+    fn temp(&self) -> Arc<Mutex<ClassManager>> {
+        self.temp_cm.clone()
     }
 
     fn global_ref(&self) -> &Self::CM {
@@ -204,12 +216,20 @@ where
     {
         Box::pin(async move {
             if class.starts_with('$') {
-                self.temp_ref().get(class, source).await
+                let temp_mux = self.temp();
+
+                let temp = temp_mux.lock().await;
+
+                temp.get(class, source).await
             } else if class.starts_with('#') {
                 match class {
                     "#fract" => Ok(vec![source.parse::<f64>().unwrap().fract().to_string()]),
                     "#dump" => {
-                        let rj = self.temp_ref().dump(source);
+                        let temp_mux = self.temp();
+
+                        let temp = temp_mux.lock().await;
+
+                        let rj = temp.dump(source);
 
                         Ok(str_2_rs(&rj.to_string()))
                     }
@@ -299,24 +319,23 @@ where
                         Ok(rs)
                     }
                     "#source" => {
+                        let temp_mux = self.temp();
+
+                        let temp = temp_mux.lock().await;
                         let class_v = self.get("$class", source).await?;
 
                         if class_v[0].starts_with('$') {
                             let target_v = self.get("$target", source).await?;
                             let class_v = self.get("$class", source).await?;
 
-                            Ok(self
-                                .temp_ref()
+                            Ok(temp
                                 .get_source(&target_v[0], &class_v[0])
                                 .unwrap_or_default())
                         } else {
-                            let data = self.temp_ref().dump(source);
+                            let data = temp.dump(source);
 
                             self.global_ref().get(class, &data.to_string()).await
                         }
-                    }
-                    "#map" => {
-                        todo!()
                     }
                     _ => {
                         let script_v = self.get("onget", class).await?;
@@ -438,7 +457,11 @@ where
     {
         Box::pin(async move {
             if class.starts_with('$') {
-                self.temp_mut().remove(class, source, target_v).await
+                let temp_mux = self.temp();
+
+                let mut temp = temp_mux.lock().await;
+
+                temp.remove(class, source, target_v).await
             } else if class.starts_with('#') {
                 let script_v = self.get("onremove", class).await?;
 
@@ -479,7 +502,11 @@ where
     {
         Box::pin(async move {
             if class.starts_with('$') {
-                self.temp_mut().append(class, source, target_v).await
+                let temp_mux = self.temp();
+
+                let mut temp = temp_mux.lock().await;
+
+                temp.append(class, source, target_v).await
             } else if class.starts_with('#') {
                 match class {
                     "#switch" => {
@@ -579,6 +606,15 @@ where
 
                         Ok(())
                     }
+                    "#call" => {
+                        let mut ce = ClassExecutor::new(self.global_mut().unwrap());
+
+                        ce.append("$source", "", vec![source.to_string()]).await?;
+
+                        ce.execute_script(&rs_2_str(&target_v)).await?;
+
+                        Ok(())
+                    }
                     _ => {
                         let script_v = self.get("onappend", class).await?;
 
@@ -611,7 +647,7 @@ where
 
 pub struct ReadOnlyClassExecutor<'cm, CM> {
     global_cm: &'cm CM,
-    temp_cm: ClassManager,
+    temp_cm: Arc<Mutex<ClassManager>>,
     path: String,
 }
 
@@ -619,12 +655,12 @@ impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
     pub fn new(global: &'cm CM) -> Self {
         Self {
             global_cm: global,
-            temp_cm: ClassManager::new(),
+            temp_cm: Arc::new(Mutex::new(ClassManager::new())),
             path: ".".to_string(),
         }
     }
 
-    pub fn new_with_temp(global: &'cm CM, temp_cm: ClassManager) -> Self {
+    pub fn new_with_temp(global: &'cm CM, temp_cm: Arc<Mutex<ClassManager>>) -> Self {
         Self {
             global_cm: global,
             temp_cm,
@@ -636,12 +672,8 @@ impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
 impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ReadOnlyClassExecutor<'cm, AsCM> {
     type CM = AsCM;
 
-    fn temp_ref(&self) -> &ClassManager {
-        &self.temp_cm
-    }
-
-    fn temp_mut(&mut self) -> &mut ClassManager {
-        &mut self.temp_cm
+    fn temp(&self) -> Arc<Mutex<ClassManager>> {
+        self.temp_cm.clone()
     }
 
     fn global_ref(&self) -> &Self::CM {
@@ -667,10 +699,6 @@ impl<'cm, CM: AsClassManager> ReadOnlyClassExecutor<'cm, CM> {
         'a1: 'f,
     {
         inner::execute_script(self, script)
-    }
-
-    pub fn temp(self) -> ClassManager {
-        self.temp_cm
     }
 }
 
