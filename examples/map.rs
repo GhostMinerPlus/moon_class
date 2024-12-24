@@ -1,5 +1,5 @@
 use moon_class::{
-    util::executor::{ClassExecutor, ClassManagerHolder},
+    executor::{def::AsClassManagerHolder, ClassExecutor},
     ClassManager,
 };
 

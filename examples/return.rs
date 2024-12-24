@@ -1,4 +1,4 @@
-use moon_class::{util::executor::ClassExecutor, ClassManager};
+use moon_class::{executor::ClassExecutor, ClassManager};
 
 fn main() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))

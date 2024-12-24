@@ -1,118 +1,18 @@
 use std::{
     collections::{BTreeSet, HashMap},
-    future::Future,
     pin::Pin,
 };
 
+mod bean;
+
+pub mod def;
 pub mod err;
+pub mod executor;
 pub mod util;
-
-#[cfg(any(target_family = "wasm", feature = "no_send"))]
-pub trait AsSendSyncOption {}
-
-#[cfg(any(target_family = "wasm", feature = "no_send"))]
-impl<T> AsSendSyncOption for T {}
-
-#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-pub trait AsSendSyncOption: Send + Sync {}
-
-#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-impl<T: Send + Sync> AsSendSyncOption for T {}
-
-#[cfg(any(target_family = "wasm", feature = "no_send"))]
-pub trait AsSendOption {}
-
-#[cfg(any(target_family = "wasm", feature = "no_send"))]
-impl<T> AsSendOption for T {}
-
-#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-pub trait AsSendOption: Send {}
-
-#[cfg(all(not(target_family = "wasm"), not(feature = "no_send")))]
-impl<T: Send> AsSendOption for T {}
-
-pub trait Fu: Future + AsSendOption {}
-
-impl<T: Future + AsSendOption> Fu for T {}
-
-pub trait AsClassManager: AsSendSyncOption {
-    fn get<'a, 'a1, 'a2, 'f>(
-        &'a self,
-        class: &'a1 str,
-        source: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f;
-
-    fn remove<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 str,
-        source: &'a2 str,
-        target_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f;
-
-    fn append<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 str,
-        source: &'a2 str,
-        target_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f;
-}
-
-pub trait AsSetable {
-    fn set<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 str,
-        source: &'a2 str,
-        target_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f;
-}
-
-impl<T: AsClassManager> AsSetable for T {
-    fn set<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        class: &'a1 str,
-        source: &'a2 str,
-        target_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            self.remove(class, source, self.get(class, source).await?)
-                .await?;
-
-            self.append(class, source, target_v.clone()).await
-        })
-    }
-}
-
-#[allow(unused)]
-pub struct Item {
-    class: String,
-    source: String,
-    target: String,
-}
 
 pub struct ClassManager {
     unique_id: u64,
-    class_mp: HashMap<u64, Item>,
+    class_mp: HashMap<u64, bean::Item>,
     class_source_inx: HashMap<(String, String), BTreeSet<u64>>,
     target_class_inx: HashMap<(String, String), BTreeSet<u64>>,
     source_inx: HashMap<String, BTreeSet<u64>>,
@@ -179,13 +79,13 @@ impl ClassManager {
     }
 }
 
-impl AsClassManager for ClassManager {
+impl def::AsClassManager for ClassManager {
     fn remove<'a, 'a1, 'a2, 'f>(
         &'a mut self,
         class: &'a1 str,
         source: &'a2 str,
         target_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
+    ) -> Pin<Box<dyn def::Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -239,7 +139,7 @@ impl AsClassManager for ClassManager {
         class: &'a1 str,
         source: &'a2 str,
         target_v: Vec<String>,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
+    ) -> Pin<Box<dyn def::Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -253,7 +153,7 @@ impl AsClassManager for ClassManager {
             for target in &target_v {
                 self.class_mp.insert(
                     id,
-                    Item {
+                    bean::Item {
                         class: class.to_string(),
                         source: source.to_string(),
                         target: target.clone(),
@@ -305,7 +205,7 @@ impl AsClassManager for ClassManager {
         &'a self,
         class: &'a1 str,
         source: &'a2 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
+    ) -> Pin<Box<dyn def::Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,

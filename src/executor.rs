@@ -3,144 +3,19 @@ use std::{collections::HashSet, fs, path::Path, pin::Pin, sync::Arc};
 use inc::inc_v_from_str;
 use tokio::sync::Mutex;
 
-use crate::{err, AsClassManager, AsSendSyncOption, ClassManager, Fu, AsSetable};
+use crate::{
+    def::{AsClassManager, AsSendSyncOption, AsSetable, Fu},
+    err,
+    util::{rs_2_str, str_2_rs},
+    ClassManager,
+};
 
-use super::{rs_2_str, str_2_rs};
-
+mod inner;
 mod string;
 mod value_extractor;
-mod inner {
-    use std::pin::Pin;
-
-    use crate::{err, util::executor::inc, AsClassManager, AsSetable, Fu};
-
-    use super::*;
-
-    pub fn unwrap_value<'a, 'a1, 'f, CM>(
-        ce: &'a mut CM,
-        inc_val: &'a1 inc::IncVal,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        CM: AsClassManager,
-    {
-        Box::pin(async move {
-            match inc_val {
-                inc::IncVal::Object(s) => value_extractor::object(ce, s).await,
-                inc::IncVal::Script(v) => value_extractor::script(ce, v).await,
-                inc::IncVal::Value(v) => Ok(vec![v.clone()]),
-                inc::IncVal::Addr((class, source)) => {
-                    let class_v = unwrap_value(ce, class).await?;
-                    let source_v = unwrap_value(ce, source).await?;
-                    let mut rs = vec![];
-
-                    for class in &class_v {
-                        for source in &source_v {
-                            rs.extend(ce.get(class, &source).await?);
-                        }
-                    }
-
-                    Ok(rs)
-                }
-            }
-        })
-    }
-
-    pub fn execute<'a, 'a1, 'f, CM>(
-        ce: &'a mut CM,
-        inc_v: &'a1 [inc::Inc],
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        CM: AsClassManager,
-    {
-        Box::pin(async move {
-            for inc in inc_v {
-                log::debug!("execute: {inc}");
-
-                let class_v = unwrap_value(ce, inc.class()).await?;
-                let source_v = unwrap_value(ce, inc.source()).await?;
-                let target_v = unwrap_value(ce, inc.target()).await?;
-
-                match inc.operator() {
-                    inc::Opt::Append => {
-                        for class in &class_v {
-                            for source in &source_v {
-                                ce.append(class, source, target_v.clone()).await?;
-                            }
-                        }
-                    }
-                    inc::Opt::Remove => {
-                        for class in &class_v {
-                            for source in &source_v {
-                                ce.remove(class, source, target_v.clone()).await?;
-                            }
-                        }
-                    }
-                    inc::Opt::Set => {
-                        for class in &class_v {
-                            for source in &source_v {
-                                ce.set(class, source, target_v.clone()).await?;
-                            }
-                        }
-                    }
-                }
-            }
-
-            ce.get("$result", "").await
-        })
-    }
-
-    pub fn execute_script<'a, 'a1, 'f, CM>(
-        ce: &'a mut CM,
-        script: &'a1 str,
-    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        CM: AsClassManager,
-    {
-        Box::pin(async move {
-            let inc_v = inc::inc_v_from_str(script)?;
-
-            log::debug!("{:?}", inc_v);
-
-            execute(ce, &inc_v).await
-        })
-    }
-}
 
 pub mod inc;
-
-pub trait ClassManagerHolder {
-    type CM: AsClassManager;
-
-    fn temp(&self) -> Arc<Mutex<ClassManager>>;
-
-    fn global_ref(&self) -> &Self::CM;
-
-    fn global_mut(&mut self) -> Option<&mut Self::CM>;
-
-    fn path_mut(&mut self) -> &mut String;
-
-    fn dump<'a, 'a1, 'f>(
-        &'a self,
-        source: &'a1 str,
-    ) -> Pin<Box<dyn Fu<Output = json::JsonValue> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-    {
-        let temp = self.temp().clone();
-        Box::pin(async move {
-            let temp = temp.lock().await;
-
-            temp.dump(source)
-        })
-    }
-}
+pub mod def;
 
 pub struct ClassExecutor<'cm, CM> {
     global_cm: &'cm mut CM,
@@ -179,7 +54,7 @@ impl<'cm, CM: AsClassManager> ClassExecutor<'cm, CM> {
     }
 }
 
-impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ClassExecutor<'cm, AsCM> {
+impl<'cm, AsCM: AsClassManager> def::AsClassManagerHolder for ClassExecutor<'cm, AsCM> {
     type CM = AsCM;
 
     fn temp(&self) -> Arc<Mutex<ClassManager>> {
@@ -202,7 +77,7 @@ impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ClassExecutor<'cm, AsCM> 
 impl<'cm, T, AsCM> AsClassManager for T
 where
     AsCM: AsClassManager,
-    T: ClassManagerHolder<CM = AsCM> + AsSendSyncOption,
+    T: def::AsClassManagerHolder<CM = AsCM> + AsSendSyncOption,
 {
     fn get<'a, 'a1, 'a2, 'f>(
         &'a self,
@@ -667,7 +542,7 @@ impl<'cm, CM> ReadOnlyClassExecutor<'cm, CM> {
     }
 }
 
-impl<'cm, AsCM: AsClassManager> ClassManagerHolder for ReadOnlyClassExecutor<'cm, AsCM> {
+impl<'cm, AsCM: AsClassManager> def::AsClassManagerHolder for ReadOnlyClassExecutor<'cm, AsCM> {
     type CM = AsCM;
 
     fn temp(&self) -> Arc<Mutex<ClassManager>> {

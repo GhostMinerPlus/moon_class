@@ -1,5 +1,3 @@
-pub mod executor;
-
 pub fn str_of_value(word: &str) -> String {
     let content = word
         .replace("\\", "\\\\")

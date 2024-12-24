@@ -2,7 +2,10 @@ use std::pin::Pin;
 
 use error_stack::ResultExt;
 
-use crate::{err, AsClassManager, Fu};
+use crate::{
+    def::{AsClassManager, Fu},
+    err,
+};
 
 use super::{
     inc,

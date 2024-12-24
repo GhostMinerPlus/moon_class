@@ -2,7 +2,7 @@ use error_stack::ResultExt;
 use sqlx::{sqlite::SqliteConnectOptions, Pool, Row, Sqlite};
 use std::pin::Pin;
 
-use moon_class::{err, AsClassManager};
+use moon_class::{err, def::AsClassManager};
 
 const CLASS_INIT_SQL: &str = "-- class_t definition
 
@@ -44,7 +44,7 @@ impl SqliteClassManager {
         &'a self,
         target: &'a1 str,
         class: &'a2 str,
-    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
+    ) -> Pin<Box<dyn moon_class::def::Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -77,7 +77,7 @@ impl AsClassManager for SqliteClassManager {
         class: &'a1 str,
         source: &'a2 str,
         target_v: Vec<String>,
-    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<()>> + 'f>>
+    ) -> Pin<Box<dyn moon_class::def::Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -105,7 +105,7 @@ impl AsClassManager for SqliteClassManager {
         class: &'a1 str,
         source: &'a2 str,
         target_v: Vec<String>,
-    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<()>> + 'f>>
+    ) -> Pin<Box<dyn moon_class::def::Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -132,7 +132,7 @@ impl AsClassManager for SqliteClassManager {
         &'a self,
         class: &'a1 str,
         source: &'a2 str,
-    ) -> Pin<Box<dyn moon_class::Fu<Output = err::Result<Vec<String>>> + 'f>>
+    ) -> Pin<Box<dyn moon_class::def::Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -174,7 +174,7 @@ impl AsClassManager for SqliteClassManager {
 
 #[cfg(test)]
 mod tests {
-    use moon_class::{util::executor::ClassExecutor, ClassManager};
+    use moon_class::{executor::ClassExecutor, ClassManager};
 
     #[test]
     fn test_add() {
